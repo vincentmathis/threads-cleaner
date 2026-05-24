@@ -100,6 +100,8 @@ class BrowserDeleter:
                         const r = icon.getBoundingClientRect();
                         if (r.width < 5 || r.height < 5) continue;
                         if (r.y < 100) continue;
+                        // Mark tried IMMEDIATELY — prevents infinite loops
+                        icon.dataset.tried = '1';
                         return {x: r.x + r.width / 2, y: r.y + r.height / 2};
                     }
                 }
@@ -129,25 +131,6 @@ class BrowserDeleter:
                         return true;
                     }
                 }
-                // No delete option — mark current More as tried.
-                const selectors2 = [
-                    'svg[aria-label="More"]',
-                    'button[aria-label="More"]',
-                    '[aria-label="More"]',
-                    'svg[aria-label="More options"]',
-                ];
-                for (const sel of selectors2) {
-                    const icons = document.querySelectorAll(sel);
-                    for (const icon of icons) {
-                        if (icon.offsetParent === null) continue;
-                        if (icon.dataset.tried) continue;
-                        const r = icon.getBoundingClientRect();
-                        if (r.width < 5 || r.height < 5) continue;
-                        if (r.y < 100) continue;
-                        icon.dataset.tried = '1';
-                        break;
-                    }
-                }
                 return false;
             })()
         """)
@@ -170,28 +153,6 @@ class BrowserDeleter:
                 }
                 return false;
             })()
-        """)
-
-    def _mark_current_more_tried(self):
-        self._page.evaluate("""
-            const selectors = [
-                'svg[aria-label="More"]',
-                'button[aria-label="More"]',
-                '[aria-label="More"]',
-                'svg[aria-label="More options"]',
-            ];
-            for (const sel of selectors) {
-                const icons = document.querySelectorAll(sel);
-                for (const icon of icons) {
-                    if (icon.offsetParent === null) continue;
-                    if (icon.dataset.tried) continue;
-                    const r = icon.getBoundingClientRect();
-                    if (r.width < 5 || r.height < 5) continue;
-                    if (r.y < 100) continue;
-                    icon.dataset.tried = '1';
-                    break;
-                }
-            }
         """)
 
     def _dismiss_toasts(self):
@@ -223,7 +184,6 @@ class BrowserDeleter:
             return False
         time.sleep(1.2)
         if not self._click_menu_delete():
-            # _click_menu_delete() already marked the SVG as tried
             self._page.keyboard.press("Escape")
             time.sleep(0.5)
             return False
@@ -233,16 +193,11 @@ class BrowserDeleter:
             had_error = self._has_error_toast()
             self._dismiss_toasts()
             return not had_error
-        # No confirmation dialog — on mobile web the delete might
-        # have gone through immediately. Check for errors.
         time.sleep(2.5)
         had_error = self._has_error_toast()
         self._dismiss_toasts()
         if not had_error:
-            return True  # assume deleted
-        self._page.keyboard.press("Escape")
-        time.sleep(0.5)
-        self._mark_current_more_tried()
+            return True
         return False
 
     def _delete_loop(self, label: str, max_deletes: int = 0) -> int:

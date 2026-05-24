@@ -84,7 +84,7 @@ class BrowserDeleter:
         except: pass
 
     def _find_and_click_more(self) -> bool:
-        return self._page.evaluate("""
+        result = self._page.evaluate("""
             (() => {
                 const icons = document.querySelectorAll('svg[aria-label="More"]');
                 for (const icon of icons) {
@@ -93,12 +93,15 @@ class BrowserDeleter:
                     const r = icon.getBoundingClientRect();
                     if (r.width < 5 || r.height < 5) continue;
                     if (r.y < 100) continue;
-                    icon.click();
-                    return true;
+                    return {x: r.x + r.width / 2, y: r.y + r.height / 2};
                 }
-                return false;
+                return null;
             })()
         """)
+        if result is None:
+            return False
+        self._page.mouse.click(result["x"], result["y"])
+        return True
 
     def _click_menu_delete(self) -> bool:
         return self._page.evaluate("""

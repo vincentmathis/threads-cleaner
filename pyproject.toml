@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "threads-cleaner"
-version = "0.2.11"
+version = "0.2.12"
 description = "Bulk-delete your Threads posts and replies. Free, open-source, runs locally."
 readme = "README.md"
 requires-python = ">=3.11"

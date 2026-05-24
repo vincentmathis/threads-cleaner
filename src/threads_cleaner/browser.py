@@ -205,10 +205,21 @@ class BrowserDeleter:
         return False
 
     def _scroll_down(self):
-        self._page.keyboard.press("End")
+        # Click in content area first so wheel events reach the right element
+        self._page.mouse.click(200, 600)
+        time.sleep(0.2)
+        # Natural mouse wheel scroll — generates real scroll events for lazy loading
+        for _ in range(3):
+            self._page.mouse.wheel(0, 2000)
+            time.sleep(0.3)
         time.sleep(3)
-        self._page.keyboard.press("End")
-        time.sleep(2)
+        # Also check for any "Show more" / "Load more" buttons
+        try:
+            btn = self._page.locator('button:has-text("Show more"), button:has-text("Load more"), button:has-text("View more"), a:has-text("Show more")').first
+            if btn.is_visible(timeout=500):
+                btn.click(timeout=1000)
+                time.sleep(3)
+        except: pass
 
     def _svg_count(self) -> int:
         return self._page.evaluate("document.querySelectorAll('svg[aria-label=\"More\"], button[aria-label=\"More\"], [aria-label=\"More\"]').length")
@@ -230,7 +241,7 @@ class BrowserDeleter:
                 scrolls_without_new_svg = 0
                 if deleted % 5 == 0:
                     svgs = self._svg_count()
-                    console.print(f"[green]✓[/] deleted {deleted} {label}  [dim]({svgs} SVGs visible)[/]")
+                    console.print(f"[green]✓[/] deleted {deleted} {label}  [dim]({svgs} SVGs)[/]")
                 continue
             consecutive_fails += 1
             total_fails += 1

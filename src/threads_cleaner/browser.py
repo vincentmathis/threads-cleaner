@@ -204,6 +204,36 @@ class BrowserDeleter:
             return True
         return False
 
+    def _debug_page(self) -> str:
+        info = self._page.evaluate("""
+            (() => {
+                const parts = [];
+                // SVG stats
+                const allSvgs = document.querySelectorAll('svg[aria-label="More"], button[aria-label="More"], [aria-label="More"]');
+                let tried = 0;
+                allSvgs.forEach(s => { if (s.dataset.tried) tried++; });
+                parts.push(`SVGs: ${allSvgs.length} total, ${tried} tried`);
+                // Scroll containers
+                const all = document.querySelectorAll('*');
+                let best = null, bestExtra = 0;
+                for (const el of all) {
+                    const style = getComputedStyle(el);
+                    if (style.overflowY !== 'scroll' && style.overflowY !== 'auto') continue;
+                    const extra = el.scrollHeight - el.clientHeight;
+                    if (extra > bestExtra) { best = el; bestExtra = extra; }
+                }
+                if (best) {
+                    const tag = best.tagName.toLowerCase();
+                    const cls = best.className || '';
+                    parts.push(`Scroll: <${tag}${cls ? '.' + cls.replace(/ /g, '.') : ''}> sh=${best.scrollHeight} ch=${best.clientHeight} st=${best.scrollTop}`);
+                } else {
+                    parts.push(`Scroll: none found, body.sh=${document.body.scrollHeight} dd.sh=${document.documentElement.scrollHeight}`);
+                }
+                return parts.join(' | ');
+            })()
+        """)
+        return info
+
     def _scroll_down(self):
         self._page.evaluate("""
             (() => {
@@ -215,7 +245,8 @@ class BrowserDeleter:
                     const extra = el.scrollHeight - el.clientHeight;
                     if (extra > bestExtra) { best = el; bestExtra = extra; }
                 }
-                (best || document.documentElement).scrollTop += 6000;
+                if (best) best.scrollTop = best.scrollHeight;
+                else document.documentElement.scrollTop = document.documentElement.scrollHeight;
             })()
         """)
         time.sleep(5)
@@ -224,40 +255,31 @@ class BrowserDeleter:
         deleted = 0
         consecutive_fails = 0
         total_fails = 0
-        no_new_content_scrolls = 0
         while True:
             if max_deletes and deleted >= max_deletes:
                 console.print(f"[dim]  hit limit of {max_deletes} {label}[/]")
                 break
+            console.print(f"[dim]  {self._debug_page()}[/]")
             ok = self._delete_next_item()
             if ok:
                 deleted += 1
                 consecutive_fails = 0
                 total_fails = 0
-                no_new_content_scrolls = 0
-                if deleted % 10 == 0:
-                    console.print(f"[dim]  deleted {deleted} {label}...[/]")
+                if deleted % 5 == 0:
+                    console.print(f"[bold green]✓[/] deleted {deleted} {label}")
                 continue
             consecutive_fails += 1
             total_fails += 1
-            if total_fails > 1000:
-                console.print(f"[dim]  gave up after {total_fails} failures[/]")
+            if total_fails > 20:
+                console.print(f"[red]gave up after {total_fails} failures[/]")
                 break
-            if consecutive_fails >= 3:
+            if consecutive_fails >= 2:
+                console.print(f"[dim]  scrolling...[/]")
                 before = self._page.evaluate("document.body.scrollHeight")
                 self._scroll_down()
                 after = self._page.evaluate("document.body.scrollHeight")
-                console.print(f"[dim]  scrolled ({after - before}px new)[/]")
+                console.print(f"[dim]  post-scroll: {self._debug_page()} (body {before}→{after})[/]")
                 consecutive_fails = 0
-                if after <= before:
-                    no_new_content_scrolls += 1
-                    if no_new_content_scrolls >= 5:
-                        console.print(f"[dim]  reached end of {label}[/]")
-                        break
-                else:
-                    no_new_content_scrolls = 0
-            else:
-                time.sleep(0.5)
         return deleted
 
     def delete_posts(self, max_deletes: int = 0) -> int:

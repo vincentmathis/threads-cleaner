@@ -4,15 +4,15 @@ import time
 
 from rich.console import Console
 
-from threads_cleaner import config, auth
+from threads_cleaner import config
 
 console = Console()
 
 
 class BrowserDeleter:
-    def __init__(self, session: dict, headless: bool = True):
+    def __init__(self, session: dict, *, headed: bool = False):
         self.session = session
-        self.headless = headless
+        self._headed = headed
         self._browser = None
         self._context = None
         self._page = None
@@ -38,7 +38,7 @@ class BrowserDeleter:
         from playwright.sync_api import sync_playwright
         self._pw = sync_playwright().start()
         self._browser = self._pw.chromium.launch(
-            headless=self.headless,
+            headless=not self._headed,
             args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
         )
         self._context = self._browser.new_context(
@@ -243,34 +243,23 @@ class BrowserDeleter:
         self._dismiss_popups()
         return self._delete_loop("replies", max_deletes)
 
-    def _save_cookies(self):
-        try:
-            cookies_raw = self._context.cookies()
-            for c in cookies_raw:
-                if c["name"] == "sessionid":
-                    self.session["sessionid"] = c["value"]
-                elif c["name"] == "csrftoken":
-                    self.session["csrftoken"] = c["value"]
-                elif c["name"] == "ds_user_id":
-                    self.session["ds_user_id"] = c["value"]
-                    self.session["user_id"] = c["value"]
-                elif c["name"] == "rur":
-                    self.session["rur"] = c["value"]
-            config.save_session(self.session)
-        except: pass
-
-
 def run_browser_delete(*, include_replies=False, max_deletes=None, dry_run=False, yes=False, headed=False):
-    session = auth.get_session()
+    session = config.load_session()
+    if not session:
+        raise RuntimeError("Not logged in. Run:  threads-cleaner browser-login")
     targets = "posts" + (" + replies" if include_replies else "")
     label = f" (max {max_deletes})" if max_deletes else ""
+    mode = "DRY RUN (no deletes)" if dry_run else "LIVE"
     console.print("[bold]Threads Cleaner - Browser Delete[/bold]\n"
-                  f"  Mode: {'DRY RUN' if dry_run else 'LIVE'}\n"
+                  f"  Mode: {mode}\n"
                   f"  Targets: {targets}{label}\n")
     if not dry_run and not yes:
         result = console.input("[yellow]This will delete items. Continue? [y/N] [/]")
         if result.lower() != "y": return
-    deleter = BrowserDeleter(session=session, headless=False)
+    if dry_run:
+        console.print("[blue]Dry run — nothing was deleted.[/]")
+        return
+    deleter = BrowserDeleter(session=session, headed=headed)
     try:
         deleter.start()
         total = 0
@@ -278,8 +267,7 @@ def run_browser_delete(*, include_replies=False, max_deletes=None, dry_run=False
         if include_replies:
             remaining = (max_deletes - total) if max_deletes else 0
             total += deleter.delete_replies(remaining)
-        if not dry_run:
-            console.print(f"\n[bold green]Done.[/] Deleted {total} item(s).")
+        console.print(f"\n[bold green]Done.[/] Deleted {total} item(s).")
     finally:
         deleter.stop()
 

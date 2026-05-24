@@ -226,18 +226,24 @@ class BrowserDeleter:
                 console.print(f"[dim]  gave up after {total_fails} failures[/]")
                 break
             if consecutive_fails >= 5:
-                before = self._page.evaluate("document.querySelector('[role=\"presentation\"] > div, main, section')?.scrollTop || document.documentElement.scrollTop || window.scrollY || 0")
-                self._page.evaluate("(() => { const el = document.querySelector('[role=\"presentation\"] > div, main, section') || document.documentElement; el.scrollBy ? el.scrollBy(0, 5000) : (el.scrollTop += 5000); })()")
-                time.sleep(2)
-                after = self._page.evaluate("document.querySelector('[role=\"presentation\"] > div, main, section')?.scrollTop || document.documentElement.scrollTop || window.scrollY || 0")
-                if after == before:
-                    console.print(f"[dim]  reached end of {label}[/]")
-                    break
+                before = self._page.evaluate("document.querySelectorAll('svg[aria-label=\"More\"], button[aria-label=\"More\"], [aria-label=\"More\"]').length")
+                self._page.mouse.move(200, 400)
+                time.sleep(0.2)
+                self._page.mouse.wheel(0, 4000)
+                time.sleep(2.5)
+                after = self._page.evaluate("document.querySelectorAll('svg[aria-label=\"More\"], button[aria-label=\"More\"], [aria-label=\"More\"]').length")
+                if after <= before:
+                    self._page.mouse.wheel(0, 6000)
+                    time.sleep(3)
+                    after = self._page.evaluate("document.querySelectorAll('svg[aria-label=\"More\"], button[aria-label=\"More\"], [aria-label=\"More\"]').length")
+                    if after <= before:
+                        console.print(f"[dim]  reached end of {label}[/]")
+                        break
                 consecutive_fails = 0
                 total_fails = 0
             else:
-                self._page.evaluate("(() => { const el = document.querySelector('[role=\"presentation\"] > div, main, section') || document.documentElement; el.scrollBy ? el.scrollBy(0, 300) : (el.scrollTop += 300); })()")
-                time.sleep(0.8)
+                self._page.mouse.wheel(0, 800)
+                time.sleep(1)
         return deleted
 
     def delete_posts(self, max_deletes: int = 0) -> int:

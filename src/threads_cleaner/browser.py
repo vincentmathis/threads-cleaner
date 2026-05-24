@@ -86,14 +86,22 @@ class BrowserDeleter:
     def _find_and_click_more(self) -> bool:
         result = self._page.evaluate("""
             (() => {
-                const icons = document.querySelectorAll('svg[aria-label="More"]');
-                for (const icon of icons) {
-                    if (icon.offsetParent === null) continue;
-                    if (icon.dataset.tried) continue;
-                    const r = icon.getBoundingClientRect();
-                    if (r.width < 5 || r.height < 5) continue;
-                    if (r.y < 100) continue;
-                    return {x: r.x + r.width / 2, y: r.y + r.height / 2};
+                const selectors = [
+                    'svg[aria-label="More"]',
+                    'button[aria-label="More"]',
+                    '[aria-label="More"]',
+                    'svg[aria-label="More options"]',
+                ];
+                for (const sel of selectors) {
+                    const icons = document.querySelectorAll(sel);
+                    for (const icon of icons) {
+                        if (icon.offsetParent === null) continue;
+                        if (icon.dataset.tried) continue;
+                        const r = icon.getBoundingClientRect();
+                        if (r.width < 5 || r.height < 5) continue;
+                        if (r.y < 100) continue;
+                        return {x: r.x + r.width / 2, y: r.y + r.height / 2};
+                    }
                 }
                 return null;
             })()
@@ -101,6 +109,7 @@ class BrowserDeleter:
         if result is None:
             return False
         self._page.mouse.click(result["x"], result["y"])
+        time.sleep(0.3)
         return True
 
     def _click_menu_delete(self) -> bool:
@@ -118,16 +127,24 @@ class BrowserDeleter:
                     }
                 }
                 // No Delete — this More belongs to someone else's post.
-                // Mark the first untried More SVG so we skip it next time.
-                const icons = document.querySelectorAll('svg[aria-label="More"]');
-                for (const icon of icons) {
-                    if (icon.offsetParent === null) continue;
-                    if (icon.dataset.tried) continue;
-                    const r = icon.getBoundingClientRect();
-                    if (r.width < 5 || r.height < 5) continue;
-                    if (r.y < 100) continue;
-                    icon.dataset.tried = '1';
-                    break;
+                // Mark the current More button as tried so we skip it next time.
+                const selectors2 = [
+                    'svg[aria-label="More"]',
+                    'button[aria-label="More"]',
+                    '[aria-label="More"]',
+                    'svg[aria-label="More options"]',
+                ];
+                for (const sel of selectors2) {
+                    const icons = document.querySelectorAll(sel);
+                    for (const icon of icons) {
+                        if (icon.offsetParent === null) continue;
+                        if (icon.dataset.tried) continue;
+                        const r = icon.getBoundingClientRect();
+                        if (r.width < 5 || r.height < 5) continue;
+                        if (r.y < 100) continue;
+                        icon.dataset.tried = '1';
+                        break;
+                    }
                 }
                 return false;
             })()
@@ -154,15 +171,23 @@ class BrowserDeleter:
 
     def _mark_current_more_tried(self):
         self._page.evaluate("""
-            const icons = document.querySelectorAll('svg[aria-label="More"]');
-            for (const icon of icons) {
-                if (icon.offsetParent === null) continue;
-                if (icon.dataset.tried) continue;
-                const r = icon.getBoundingClientRect();
-                if (r.width < 5 || r.height < 5) continue;
-                if (r.y < 100) continue;
-                icon.dataset.tried = '1';
-                break;
+            const selectors = [
+                'svg[aria-label="More"]',
+                'button[aria-label="More"]',
+                '[aria-label="More"]',
+                'svg[aria-label="More options"]',
+            ];
+            for (const sel of selectors) {
+                const icons = document.querySelectorAll(sel);
+                for (const icon of icons) {
+                    if (icon.offsetParent === null) continue;
+                    if (icon.dataset.tried) continue;
+                    const r = icon.getBoundingClientRect();
+                    if (r.width < 5 || r.height < 5) continue;
+                    if (r.y < 100) continue;
+                    icon.dataset.tried = '1';
+                    break;
+                }
             }
         """)
 
@@ -193,19 +218,19 @@ class BrowserDeleter:
         self._dismiss_toasts()
         if not self._find_and_click_more():
             return False
-        time.sleep(0.8)
+        time.sleep(1.2)
         if not self._click_menu_delete():
             self._page.keyboard.press("Escape")
-            time.sleep(0.3)
+            time.sleep(0.5)
             self._mark_current_more_tried()
             return False
-        time.sleep(0.8)
+        time.sleep(1.2)
         if not self._click_confirm_delete():
             self._page.keyboard.press("Escape")
-            time.sleep(0.3)
+            time.sleep(0.5)
             self._mark_current_more_tried()
             return False
-        time.sleep(1.5)
+        time.sleep(2)
         had_error = self._has_error_toast()
         self._dismiss_toasts()
         if had_error:

@@ -37,10 +37,18 @@ class BrowserDeleter:
     def start(self):
         from playwright.sync_api import sync_playwright
         self._pw = sync_playwright().start()
-        self._browser = self._pw.chromium.launch(
-            headless=not self._headed,
-            args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
-        )
+        try:
+            self._browser = self._pw.chromium.launch(
+                headless=not self._headed,
+                args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
+            )
+        except Exception as e:
+            msg = str(e)
+            if "Executable doesn't exist" in msg or "executable" in msg.lower() and "playwright" in msg.lower():
+                console.print("[red]Chromium browser not found.[/]")
+                console.print("Run: [bold]threads-cleaner install-browser[/]")
+                raise RuntimeError("Playwright browser not installed") from e
+            raise
         self._context = self._browser.new_context(
             viewport={"width": 1280, "height": 720},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -295,34 +303,42 @@ def run_browser_delete(*, include_replies=False, max_deletes=None, dry_run=False
 def run_browser_login() -> dict:
     from playwright.sync_api import sync_playwright, TimeoutError as PwTimeout
     console.print("[bold]Threads Cleaner - Browser Login[/bold]\n")
-    with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=False, args=["--no-sandbox"])
-        ctx = browser.new_context(viewport={"width": 1280, "height": 800})
-        page = ctx.new_page()
-        page.goto("about:blank")
-        console.print("[yellow]Go to [bold]https://www.threads.net/[/bold] -> log in -> go to your profile -> wait[/]")
-        try:
-            page.wait_for_url("**/***@**", timeout=600000)
-        except PwTimeout:
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=False, args=["--no-sandbox"])
+            ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+            page = ctx.new_page()
+            page.goto("about:blank")
+            console.print("[yellow]Go to [bold]https://www.threads.net/[/bold] -> log in -> go to your profile -> wait[/]")
+            try:
+                page.wait_for_url("**/***@**", timeout=600000)
+            except PwTimeout:
+                browser.close()
+                raise RuntimeError("Login timed out")
+            time.sleep(2)
+            cookies_raw = ctx.cookies()
+            cookies = {c["name"]: c["value"] for c in cookies_raw if c["name"] in ("sessionid", "csrftoken", "ds_user_id", "rur")}
+            if not cookies.get("sessionid"):
+                browser.close()
+                raise RuntimeError("No session cookie")
+            sessionid = cookies["sessionid"]
+            csrftoken = cookies.get("csrftoken", "")
+            ds_user_id = cookies.get("ds_user_id", "")
+            cookies["sessionid"] = sessionid
+            cookies["csrftoken"] = csrftoken
+            cookies["ds_user_id"] = ds_user_id
+            # Extract username from the URL
+            username = page.url.split("/@")[-1].split("/")[0].split("?")[0]
+            user_id = ds_user_id or ""
+            session = {"sessionid": sessionid, "csrftoken": csrftoken, "ds_user_id": user_id, "rur": cookies.get("rur", ""), "user_id": user_id, "username": username}
+            config.save_session(session)
             browser.close()
-            raise RuntimeError("Login timed out")
-        time.sleep(2)
-        cookies_raw = ctx.cookies()
-        cookies = {c["name"]: c["value"] for c in cookies_raw if c["name"] in ("sessionid", "csrftoken", "ds_user_id", "rur")}
-        if not cookies.get("sessionid"):
-            browser.close()
-            raise RuntimeError("No session cookie")
-        sessionid = cookies["sessionid"]
-        csrftoken = cookies.get("csrftoken", "")
-        ds_user_id = cookies.get("ds_user_id", "")
-        cookies["sessionid"] = sessionid
-        cookies["csrftoken"] = csrftoken
-        cookies["ds_user_id"] = ds_user_id
-        # Extract username from the URL
-        username = page.url.split("/@")[-1].split("/")[0].split("?")[0]
-        user_id = ds_user_id or ""
-        session = {"sessionid": sessionid, "csrftoken": csrftoken, "ds_user_id": user_id, "rur": cookies.get("rur", ""), "user_id": user_id, "username": username}
-        config.save_session(session)
-        browser.close()
+    except Exception as e:
+        msg = str(e)
+        if "Executable doesn't exist" in msg or ("executable" in str(e).lower() and "playwright" in str(e).lower()):
+            console.print("[red]Chromium browser not found.[/]")
+            console.print("Run: [bold]threads-cleaner install-browser[/]")
+            raise RuntimeError("Playwright browser not installed") from e
+        raise
     console.print(f"[green]Session saved.[/] Logged in as [bold]@{username}[/]")
     return session

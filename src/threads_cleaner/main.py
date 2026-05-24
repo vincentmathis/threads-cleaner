@@ -41,13 +41,33 @@ def browser_delete(
     ),
 ):
     """Delete posts (and optionally replies) via a real browser (Playwright). Clicks the UI like a human."""
-    run_browser_delete(
-        include_replies=include_replies,
-        max_deletes=max_deletes,
-        dry_run=dry_run,
-        yes=yes,
-        headed=headed,
+    try:
+        run_browser_delete(
+            include_replies=include_replies,
+            max_deletes=max_deletes,
+            dry_run=dry_run,
+            yes=yes,
+            headed=headed,
+        )
+    except Exception as e:
+        console.print(f"[red]Error:[/] {e}")
+        raise typer.Exit(1)
+
+
+@app.command()
+def install_browser():
+    """Install the Chromium browser required by Playwright."""
+    import subprocess, sys
+    console.print("[yellow]Installing Chromium browser for Playwright...[/]")
+    result = subprocess.run(
+        [sys.executable, "-m", "playwright", "install", "chromium"],
+        capture_output=False,
     )
+    if result.returncode == 0:
+        console.print("[green]Chromium installed![/] Run [bold]threads-cleaner browser-login[/] to start.")
+    else:
+        console.print("[red]Installation failed.[/] Try manually: [bold]playwright install chromium[/]")
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":

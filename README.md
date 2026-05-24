@@ -11,13 +11,13 @@ pip install threads-cleaner
 uv add threads-cleaner
 ```
 
-Then install the Playwright browser:
+Then install the Chromium browser:
 
 ```bash
-playwright install chromium
-# or
-uv run playwright install chromium
+threads-cleaner install-browser
 ```
+
+(The `install-browser` command runs `playwright install chromium` in your environment.)
 
 ## Quick start
 
@@ -36,6 +36,7 @@ threads-cleaner browser-delete --headed --max 5
 
 | Command | Description |
 |---------|-------------|
+| `install-browser` | Download the Chromium browser required by Playwright |
 | `browser-login` | Opens a headed browser — log into Threads and session is saved automatically |
 | `browser-delete` | Deletes posts by clicking the Threads UI |
 | `browser-delete --include-replies` | Also delete your replies |

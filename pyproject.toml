@@ -28,7 +28,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/YOUR_USERNAME/threads-cleaner"
+Homepage = "https://github.com/vincentmathis/threads-cleaner"
+Repository = "https://github.com/vincentmathis/threads-cleaner"
 
 [project.scripts]
 threads-cleaner = "threads_cleaner.main:app"

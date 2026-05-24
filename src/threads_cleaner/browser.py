@@ -204,6 +204,22 @@ class BrowserDeleter:
             return True
         return False
 
+    def _scroll_down(self):
+        self._page.evaluate("""
+            (() => {
+                const all = document.querySelectorAll('*');
+                let best = null, bestExtra = 0;
+                for (const el of all) {
+                    const style = getComputedStyle(el);
+                    if (style.overflowY !== 'scroll' && style.overflowY !== 'auto') continue;
+                    const extra = el.scrollHeight - el.clientHeight;
+                    if (extra > bestExtra) { best = el; bestExtra = extra; }
+                }
+                (best || document.documentElement).scrollTop += 6000;
+            })()
+        """)
+        time.sleep(5)
+
     def _delete_loop(self, label: str, max_deletes: int = 0) -> int:
         deleted = 0
         consecutive_fails = 0
@@ -227,13 +243,11 @@ class BrowserDeleter:
             if total_fails > 1000:
                 console.print(f"[dim]  gave up after {total_fails} failures[/]")
                 break
-            if consecutive_fails >= 5:
+            if consecutive_fails >= 3:
                 before = self._page.evaluate("document.body.scrollHeight")
-                self._page.mouse.move(200, 400)
-                time.sleep(0.2)
-                self._page.mouse.wheel(0, 5000)
-                time.sleep(4)
+                self._scroll_down()
                 after = self._page.evaluate("document.body.scrollHeight")
+                console.print(f"[dim]  scrolled ({after - before}px new)[/]")
                 consecutive_fails = 0
                 if after <= before:
                     no_new_content_scrolls += 1
@@ -242,6 +256,8 @@ class BrowserDeleter:
                         break
                 else:
                     no_new_content_scrolls = 0
+            else:
+                time.sleep(0.5)
         return deleted
 
     def delete_posts(self, max_deletes: int = 0) -> int:

@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "threads-cleaner"
+version = "0.2.0"
+description = "Bulk-delete your Threads posts and replies. Free, open-source, runs locally."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+keywords = ["threads", "instagram", "delete", "bulk", "cleaner"]
+authors = [
+    { name = "Vince", email = "vince@example.com" },
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+dependencies = [
+    "typer>=0.12.0",
+    "rich>=13.0.0",
+    "playwright>=1.59.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/YOUR_USERNAME/threads-cleaner"
+Repository = "https://github.com/YOUR_USERNAME/threads-cleaner"
+
+[project.scripts]
+threads-cleaner = "threads_cleaner.main:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/threads_cleaner"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/threads_cleaner"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.4.0",
+]

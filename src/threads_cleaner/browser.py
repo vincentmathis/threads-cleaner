@@ -208,6 +208,7 @@ class BrowserDeleter:
         deleted = 0
         consecutive_fails = 0
         total_fails = 0
+        no_new_content_scrolls = 0
         while True:
             if max_deletes and deleted >= max_deletes:
                 console.print(f"[dim]  hit limit of {max_deletes} {label}[/]")
@@ -217,33 +218,30 @@ class BrowserDeleter:
                 deleted += 1
                 consecutive_fails = 0
                 total_fails = 0
+                no_new_content_scrolls = 0
                 if deleted % 10 == 0:
                     console.print(f"[dim]  deleted {deleted} {label}...[/]")
                 continue
             consecutive_fails += 1
             total_fails += 1
-            if total_fails > 200:
+            if total_fails > 1000:
                 console.print(f"[dim]  gave up after {total_fails} failures[/]")
                 break
             if consecutive_fails >= 5:
-                before = self._page.evaluate("document.querySelectorAll('svg[aria-label=\"More\"], button[aria-label=\"More\"], [aria-label=\"More\"]').length")
+                before = self._page.evaluate("document.body.scrollHeight")
                 self._page.mouse.move(200, 400)
                 time.sleep(0.2)
-                self._page.mouse.wheel(0, 4000)
-                time.sleep(2.5)
-                after = self._page.evaluate("document.querySelectorAll('svg[aria-label=\"More\"], button[aria-label=\"More\"], [aria-label=\"More\"]').length")
+                self._page.mouse.wheel(0, 5000)
+                time.sleep(4)
+                after = self._page.evaluate("document.body.scrollHeight")
+                consecutive_fails = 0
                 if after <= before:
-                    self._page.mouse.wheel(0, 6000)
-                    time.sleep(3)
-                    after = self._page.evaluate("document.querySelectorAll('svg[aria-label=\"More\"], button[aria-label=\"More\"], [aria-label=\"More\"]').length")
-                    if after <= before:
+                    no_new_content_scrolls += 1
+                    if no_new_content_scrolls >= 5:
                         console.print(f"[dim]  reached end of {label}[/]")
                         break
-                consecutive_fails = 0
-                total_fails = 0
-            else:
-                self._page.mouse.wheel(0, 800)
-                time.sleep(1)
+                else:
+                    no_new_content_scrolls = 0
         return deleted
 
     def delete_posts(self, max_deletes: int = 0) -> int:

@@ -1,7 +1,10 @@
 # threads-cleaner
 
 Bulk-delete your Threads posts and replies via browser automation.  
-Clicks the web UI like a human — no API keys, no developer account, no rate limits.
+No API keys, no developer account, no rate limits.
+
+> **Desktop web status:** Meta broke the `threads.com` desktop web UI — the More (⋮) menu doesn't open.  
+> This tool works around it by using a **mobile viewport**. The browser opens phone-sized, which serves the working mobile web version.
 
 ## Installation
 
@@ -17,18 +20,16 @@ Then install the Chromium browser:
 threads-cleaner install-browser
 ```
 
-(The `install-browser` command runs `playwright install chromium` in your environment.)
-
 ## Quick start
 
 ```bash
-# 1. Log in (opens a browser — go to threads.net, sign in, navigate to your profile)
+# 1. Log in (opens a phone-sized browser — go to threads.net, sign in, go to your profile)
 threads-cleaner browser-login
 
 # 2. Delete all posts
 threads-cleaner browser-delete
 
-# 3. Show the browser window to watch what happens
+# 3. Watch what happens
 threads-cleaner browser-delete --headed --max 5
 ```
 
@@ -37,18 +38,18 @@ threads-cleaner browser-delete --headed --max 5
 | Command | Description |
 |---------|-------------|
 | `install-browser` | Download the Chromium browser required by Playwright |
-| `browser-login` | Opens a headed browser — log into Threads and session is saved automatically |
-| `browser-delete` | Deletes posts by clicking the Threads UI |
-| `browser-delete --include-replies` | Also delete your replies |
-| `browser-delete --max N` | Stop after N deletions (0 = unlimited) |
-| `browser-delete --dry-run` | Open browser, navigate to profile, but don't confirm any deletes |
-| `browser-delete --headed` | Show the browser (useful for debugging) |
-| `browser-delete --yes` | Skip the confirmation prompt (for scripting) |
+| `browser-login` | Opens a headed browser — log into Threads, session saved automatically |
+| `browser-delete` | Deletes posts by clicking the Threads mobile web UI |
+| `--include-replies` | Also delete your replies |
+| `--max N`, `-m N` | Stop after N deletions (0 = unlimited) |
+| `--dry-run` | Open browser, navigate to profile, no destructive clicks |
+| `--headed` | Show the browser window (for debugging) |
+| `--yes`, `-y` | Skip the confirmation prompt (for scripting) |
 
 ### Examples
 
 ```bash
-# Delete up to 10 posts, show the browser
+# Delete up to 10 posts, show browser
 threads-cleaner browser-delete --headed --max 10
 
 # Delete everything including replies, no prompts
@@ -63,33 +64,40 @@ threads-cleaner browser-delete --include-replies --max 50
 
 ## How it works
 
-1. **`browser-login`** opens a Chromium window — you sign into threads.net and the session cookies are saved locally.
-2. **`browser-delete`** loads those cookies into a fresh browser, navigates to your profile, and for each post:
-   - Clicks the **More** (⋮) button
-   - Clicks **Delete** in the popup menu
-   - Clicks **Delete** in the confirmation dialog
-3. With `--include-replies`, it also navigates to `/replies/` and repeats the same loop.
+1. **`browser-login`** opens a Chromium window in mobile mode (390×844).  
+   You sign into `threads.net` — session cookies are saved to `~/.config/threads-cleaner/session.json`.
 
-Each delete takes ~3-4 seconds (limited by UI animations).  
-The tool scrolls down automatically as it runs, so it can delete hundreds of items in one session.
+2. **`browser-delete`** loads those cookies, navigates to your profile, and for each post:
+   - Clicks the **More** (⋮) button via Playwright's native mouse click
+   - Clicks **Delete** in the mobile bottom-sheet menu
+   - Clicks **Delete** in the confirmation dialog (or detects auto-deletion if no dialog appears)
+   - Marks each item as "tried" immediately to prevent loops
+
+3. With `--include-replies`, it also navigates to `@{username}/replies/` and repeats.
+
+Each UI interaction takes ~4-5 seconds. The tool scrolls automatically and can delete hundreds of items per session.
 
 ### Safety
 
-- **`--dry-run`** opens the browser and navigates to your profile but never clicks anything destructive.
+- **`--dry-run`** opens the browser but never clicks anything destructive.
 - **`--max N`** stops after N successful deletes.
-- If a "Something went wrong" toast appears, the tool counts it as a failure (not a success) and continues.
-- Session cookies expire — re-run `browser-login` if you get a login error.
+- "Something went wrong" toasts are detected and counted as failures (never falsely reported as deleted).
+- Session cookies expire — re-run `browser-login` if you see a login error.
+- Every "More" button is tried at most once — no infinite retry loops.
 
 ## Requirements
 
 - Python 3.11+
-- Chromium (installed via `playwright install chromium`)
+- Chromium (installed via `threads-cleaner install-browser`)
 
-## Why no API?
+## Why not use an API?
 
-Meta's Threads Graph API requires an approved Facebook Developer account (the author's was suspended).  
-The Instagram REST API endpoints that Threads used internally are now returning 404 or killing sessions.  
-The only reliable approach is real browser automation that clicks the UI like a human.
+| Approach | Result |
+|----------|--------|
+| Meta Threads Graph API | Requires approved FB Developer account (author's was suspended) |
+| Instagram REST API (`text_feed`, `media/delete`) | Returns 404 or kills the session server-side |
+| Threads GraphQL endpoint (`threads.com/api/graphql`) | Same-origin fetch fails from extension context |
+| **Browser UI automation ← you are here** | Works. Clicks the real UI like a human. |
 
 ## License
 

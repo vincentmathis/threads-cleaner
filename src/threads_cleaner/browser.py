@@ -115,19 +115,21 @@ class BrowserDeleter:
     def _click_menu_delete(self) -> bool:
         return self._page.evaluate("""
             (() => {
-                const menu = document.querySelector('[role="menu"]');
-                if (!menu) return false;
-                const all = menu.querySelectorAll('span, div, button, [role="button"]');
+                const exact = ['Delete', 'Delete reply', 'Remove'];
+                // On mobile web the popup is a bottom sheet, not [role="menu"].
+                // Search any visible popup first, then fall back to whole page.
+                const popup = document.querySelector('[role="menu"], [role="dialog"], [role="alertdialog"]');
+                const scope = popup || document.body;
+                const all = scope.querySelectorAll('span, div, button, [role="button"]');
                 for (const el of all) {
                     if (el.offsetParent === null) continue;
-                    const txt = el.innerText || el.textContent || '';
-                    if (txt.trim() === 'Delete') {
+                    const txt = (el.innerText || el.textContent || '').trim();
+                    if (exact.includes(txt)) {
                         el.click();
                         return true;
                     }
                 }
-                // No Delete — this More belongs to someone else's post.
-                // Mark the current More button as tried so we skip it next time.
+                // No delete option — mark current More as tried.
                 const selectors2 = [
                     'svg[aria-label="More"]',
                     'button[aria-label="More"]',
@@ -153,11 +155,12 @@ class BrowserDeleter:
     def _click_confirm_delete(self) -> bool:
         return self._page.evaluate("""
             (() => {
+                const exact = ['Delete', 'Delete reply', 'Remove'];
                 const all = document.querySelectorAll('span, div, button, [role="button"]');
                 for (const el of all) {
                     if (el.offsetParent === null) continue;
-                    const txt = el.innerText || el.textContent || '';
-                    if (txt.trim() === 'Delete') {
+                    const txt = (el.innerText || el.textContent || '').trim();
+                    if (exact.includes(txt)) {
                         // Must NOT be inside the menu (which we already dismissed)
                         if (!el.closest('[role="menu"]')) {
                             el.click();
@@ -220,22 +223,27 @@ class BrowserDeleter:
             return False
         time.sleep(1.2)
         if not self._click_menu_delete():
+            # _click_menu_delete() already marked the SVG as tried
             self._page.keyboard.press("Escape")
             time.sleep(0.5)
-            self._mark_current_more_tried()
             return False
         time.sleep(1.2)
-        if not self._click_confirm_delete():
-            self._page.keyboard.press("Escape")
-            time.sleep(0.5)
-            self._mark_current_more_tried()
-            return False
-        time.sleep(2)
+        if self._click_confirm_delete():
+            time.sleep(2)
+            had_error = self._has_error_toast()
+            self._dismiss_toasts()
+            return not had_error
+        # No confirmation dialog — on mobile web the delete might
+        # have gone through immediately. Check for errors.
+        time.sleep(2.5)
         had_error = self._has_error_toast()
         self._dismiss_toasts()
-        if had_error:
-            return False
-        return True
+        if not had_error:
+            return True  # assume deleted
+        self._page.keyboard.press("Escape")
+        time.sleep(0.5)
+        self._mark_current_more_tried()
+        return False
 
     def _delete_loop(self, label: str, max_deletes: int = 0) -> int:
         deleted = 0

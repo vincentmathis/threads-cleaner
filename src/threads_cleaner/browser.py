@@ -204,81 +204,52 @@ class BrowserDeleter:
             return True
         return False
 
-    def _debug_page(self) -> str:
-        info = self._page.evaluate("""
-            (() => {
-                const parts = [];
-                // SVG stats
-                const allSvgs = document.querySelectorAll('svg[aria-label="More"], button[aria-label="More"], [aria-label="More"]');
-                let tried = 0;
-                allSvgs.forEach(s => { if (s.dataset.tried) tried++; });
-                parts.push(`SVGs: ${allSvgs.length} total, ${tried} tried`);
-                // Scroll containers
-                const all = document.querySelectorAll('*');
-                let best = null, bestExtra = 0;
-                for (const el of all) {
-                    const style = getComputedStyle(el);
-                    if (style.overflowY !== 'scroll' && style.overflowY !== 'auto') continue;
-                    const extra = el.scrollHeight - el.clientHeight;
-                    if (extra > bestExtra) { best = el; bestExtra = extra; }
-                }
-                if (best) {
-                    const tag = best.tagName.toLowerCase();
-                    const cls = best.className || '';
-                    parts.push(`Scroll: <${tag}${cls ? '.' + cls.replace(/ /g, '.') : ''}> sh=${best.scrollHeight} ch=${best.clientHeight} st=${best.scrollTop}`);
-                } else {
-                    parts.push(`Scroll: none found, body.sh=${document.body.scrollHeight} dd.sh=${document.documentElement.scrollHeight}`);
-                }
-                return parts.join(' | ');
-            })()
-        """)
-        return info
-
     def _scroll_down(self):
-        self._page.evaluate("""
-            (() => {
-                const all = document.querySelectorAll('*');
-                let best = null, bestExtra = 0;
-                for (const el of all) {
-                    const style = getComputedStyle(el);
-                    if (style.overflowY !== 'scroll' && style.overflowY !== 'auto') continue;
-                    const extra = el.scrollHeight - el.clientHeight;
-                    if (extra > bestExtra) { best = el; bestExtra = extra; }
-                }
-                if (best) best.scrollTop = best.scrollHeight;
-                else document.documentElement.scrollTop = document.documentElement.scrollHeight;
-            })()
-        """)
-        time.sleep(5)
+        self._page.keyboard.press("End")
+        time.sleep(3)
+        self._page.keyboard.press("End")
+        time.sleep(2)
+
+    def _svg_count(self) -> int:
+        return self._page.evaluate("document.querySelectorAll('svg[aria-label=\"More\"], button[aria-label=\"More\"], [aria-label=\"More\"]').length")
 
     def _delete_loop(self, label: str, max_deletes: int = 0) -> int:
         deleted = 0
         consecutive_fails = 0
         total_fails = 0
+        scrolls_without_new_svg = 0
         while True:
             if max_deletes and deleted >= max_deletes:
                 console.print(f"[dim]  hit limit of {max_deletes} {label}[/]")
                 break
-            console.print(f"[dim]  {self._debug_page()}[/]")
             ok = self._delete_next_item()
             if ok:
                 deleted += 1
                 consecutive_fails = 0
                 total_fails = 0
+                scrolls_without_new_svg = 0
                 if deleted % 5 == 0:
-                    console.print(f"[bold green]✓[/] deleted {deleted} {label}")
+                    svgs = self._svg_count()
+                    console.print(f"[green]✓[/] deleted {deleted} {label}  [dim]({svgs} SVGs visible)[/]")
                 continue
             consecutive_fails += 1
             total_fails += 1
-            if total_fails > 20:
+            if total_fails > 500:
                 console.print(f"[red]gave up after {total_fails} failures[/]")
                 break
             if consecutive_fails >= 2:
-                console.print(f"[dim]  scrolling...[/]")
-                before = self._page.evaluate("document.body.scrollHeight")
+                svgs_before = self._svg_count()
                 self._scroll_down()
-                after = self._page.evaluate("document.body.scrollHeight")
-                console.print(f"[dim]  post-scroll: {self._debug_page()} (body {before}→{after})[/]")
+                svgs_after = self._svg_count()
+                if svgs_after > svgs_before:
+                    scrolls_without_new_svg = 0
+                    console.print(f"[blue]↓[/] scrolled — {svgs_after} SVGs (was {svgs_before})")
+                else:
+                    scrolls_without_new_svg += 1
+                    console.print(f"[yellow]↓[/] scrolled — no new SVGs ({scrolls_without_new_svg}/20)")
+                    if scrolls_without_new_svg >= 20:
+                        console.print(f"[red]reached end of {label}[/]")
+                        break
                 consecutive_fails = 0
         return deleted
 

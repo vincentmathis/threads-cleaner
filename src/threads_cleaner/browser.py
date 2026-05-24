@@ -50,8 +50,8 @@ class BrowserDeleter:
                 raise RuntimeError("Playwright browser not installed") from e
             raise
         self._context = self._browser.new_context(
-            viewport={"width": 1280, "height": 720},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            viewport={"width": 390, "height": 844},
+            user_agent="Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.83 Mobile Safari/537.36",
         )
         self._page = self._context.new_page()
         console.print("[dim]  setting session cookies...[/]")
@@ -338,7 +338,10 @@ def run_browser_login() -> dict:
     try:
         with sync_playwright() as pw:
             browser = pw.chromium.launch(headless=False, args=["--no-sandbox"])
-            ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+            ctx = browser.new_context(
+                viewport={"width": 390, "height": 844},
+                user_agent="Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.83 Mobile Safari/537.36",
+            )
             page = ctx.new_page()
             page.goto("about:blank")
             console.print("[yellow]Go to [bold]https://www.threads.net/[/bold] -> log in -> go to your profile -> wait[/]")

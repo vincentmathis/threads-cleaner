@@ -77,7 +77,10 @@ class BrowserDeleter:
                     time.sleep(0.3)
             except: pass
         try:
-            self._page.evaluate("document.querySelectorAll('[role=dialog]').forEach(e=>e.remove()); document.body.style.overflow='';")
+            self._page.keyboard.press("Escape")
+            time.sleep(0.3)
+            self._page.keyboard.press("Escape")
+            time.sleep(0.3)
         except: pass
 
     def _find_and_click_more(self) -> bool:
@@ -90,7 +93,7 @@ class BrowserDeleter:
                     const r = icon.getBoundingClientRect();
                     if (r.width < 5 || r.height < 5) continue;
                     if (r.y < 100) continue;
-                    icon.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+                    icon.click();
                     return true;
                 }
                 return false;
@@ -107,7 +110,7 @@ class BrowserDeleter:
                     if (el.offsetParent === null) continue;
                     const txt = el.innerText || el.textContent || '';
                     if (txt.trim() === 'Delete') {
-                        el.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+                        el.click();
                         return true;
                     }
                 }
@@ -135,8 +138,9 @@ class BrowserDeleter:
                     if (el.offsetParent === null) continue;
                     const txt = el.innerText || el.textContent || '';
                     if (txt.trim() === 'Delete') {
-                        if (el.closest('[role="dialog"], [role="alertdialog"]')) {
-                            el.dispatchEvent(new MouseEvent('click', {bubbles: true}));
+                        // Must NOT be inside the menu (which we already dismissed)
+                        if (!el.closest('[role="menu"]')) {
+                            el.click();
                             return true;
                         }
                     }

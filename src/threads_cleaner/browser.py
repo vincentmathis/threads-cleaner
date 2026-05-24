@@ -78,9 +78,10 @@ class BrowserDeleter:
                 const icons = document.querySelectorAll('svg[aria-label="More"]');
                 for (const icon of icons) {
                     if (icon.offsetParent === null) continue;
+                    if (icon.dataset.tried) continue;
                     const r = icon.getBoundingClientRect();
                     if (r.width < 5 || r.height < 5) continue;
-                    if (r.y < 100) continue; // skip header "More"
+                    if (r.y < 100) continue;
                     icon.dispatchEvent(new MouseEvent('click', {bubbles: true}));
                     return true;
                 }
@@ -101,6 +102,18 @@ class BrowserDeleter:
                         el.dispatchEvent(new MouseEvent('click', {bubbles: true}));
                         return true;
                     }
+                }
+                // No Delete — this More belongs to someone else's post.
+                // Mark the first untried More SVG so we skip it next time.
+                const icons = document.querySelectorAll('svg[aria-label="More"]');
+                for (const icon of icons) {
+                    if (icon.offsetParent === null) continue;
+                    if (icon.dataset.tried) continue;
+                    const r = icon.getBoundingClientRect();
+                    if (r.width < 5 || r.height < 5) continue;
+                    if (r.y < 100) continue;
+                    icon.dataset.tried = '1';
+                    break;
                 }
                 return false;
             })()

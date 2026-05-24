@@ -115,11 +115,9 @@ class BrowserDeleter:
         return True
 
     def _click_menu_delete(self) -> bool:
-        return self._page.evaluate("""
+        pos = self._page.evaluate("""
             (() => {
                 const exact = ['Delete', 'Delete reply', 'Remove'];
-                // On mobile web the popup is a bottom sheet, not [role="menu"].
-                // Search any visible popup first, then fall back to whole page.
                 const popup = document.querySelector('[role="menu"], [role="dialog"], [role="alertdialog"]');
                 const scope = popup || document.body;
                 const all = scope.querySelectorAll('span, div, button, [role="button"]');
@@ -127,33 +125,39 @@ class BrowserDeleter:
                     if (el.offsetParent === null) continue;
                     const txt = (el.innerText || el.textContent || '').trim();
                     if (exact.includes(txt)) {
-                        el.click();
-                        return true;
+                        const r = el.getBoundingClientRect();
+                        return {x: r.x + r.width / 2, y: r.y + r.height / 2};
                     }
                 }
-                return false;
+                return null;
             })()
         """)
+        if pos is None:
+            return False
+        self._page.mouse.click(pos["x"], pos["y"])
+        return True
 
     def _click_confirm_delete(self) -> bool:
-        return self._page.evaluate("""
+        pos = self._page.evaluate("""
             (() => {
                 const exact = ['Delete', 'Delete reply', 'Remove'];
                 const all = document.querySelectorAll('span, div, button, [role="button"]');
                 for (const el of all) {
                     if (el.offsetParent === null) continue;
+                    if (el.closest('[role="menu"]')) continue;
                     const txt = (el.innerText || el.textContent || '').trim();
                     if (exact.includes(txt)) {
-                        // Must NOT be inside the menu (which we already dismissed)
-                        if (!el.closest('[role="menu"]')) {
-                            el.click();
-                            return true;
-                        }
+                        const r = el.getBoundingClientRect();
+                        return {x: r.x + r.width / 2, y: r.y + r.height / 2};
                     }
                 }
-                return false;
+                return null;
             })()
         """)
+        if pos is None:
+            return False
+        self._page.mouse.click(pos["x"], pos["y"])
+        return True
 
     def _dismiss_toasts(self):
         try:

@@ -98,7 +98,7 @@ class BrowserDeleter:
                 for (const el of all) {
                     if (el.offsetParent === null) continue;
                     const txt = el.innerText || el.textContent || '';
-                    if (txt.trim() === 'Delete' && el.childElementCount === 0) {
+                    if (txt.trim() === 'Delete') {
                         el.dispatchEvent(new MouseEvent('click', {bubbles: true}));
                         return true;
                     }
@@ -126,8 +126,8 @@ class BrowserDeleter:
                 for (const el of all) {
                     if (el.offsetParent === null) continue;
                     const txt = el.innerText || el.textContent || '';
-                    if (txt.trim() === 'Delete' && el.childElementCount === 0) {
-                        if (el.closest('[role="dialog"]')) {
+                    if (txt.trim() === 'Delete') {
+                        if (el.closest('[role="dialog"], [role="alertdialog"]')) {
                             el.dispatchEvent(new MouseEvent('click', {bubbles: true}));
                             return true;
                         }
@@ -135,6 +135,20 @@ class BrowserDeleter:
                 }
                 return false;
             })()
+        """)
+
+    def _mark_current_more_tried(self):
+        self._page.evaluate("""
+            const icons = document.querySelectorAll('svg[aria-label="More"]');
+            for (const icon of icons) {
+                if (icon.offsetParent === null) continue;
+                if (icon.dataset.tried) continue;
+                const r = icon.getBoundingClientRect();
+                if (r.width < 5 || r.height < 5) continue;
+                if (r.y < 100) continue;
+                icon.dataset.tried = '1';
+                break;
+            }
         """)
 
     def _dismiss_toasts(self):
@@ -168,11 +182,13 @@ class BrowserDeleter:
         if not self._click_menu_delete():
             self._page.keyboard.press("Escape")
             time.sleep(0.3)
+            self._mark_current_more_tried()
             return False
         time.sleep(0.8)
         if not self._click_confirm_delete():
             self._page.keyboard.press("Escape")
             time.sleep(0.3)
+            self._mark_current_more_tried()
             return False
         time.sleep(1.5)
         had_error = self._has_error_toast()
@@ -240,6 +256,10 @@ class BrowserDeleter:
         except:
             pass
         time.sleep(4)
+        if "login" in self._page.url.lower():
+            console.print(f"[red]Not logged in (current URL: {self._page.url}).[/]")
+            console.print("[yellow]Run [bold]threads-cleaner browser-login[/] to refresh the session.[/]")
+            raise RuntimeError("Session expired or invalid")
         self._dismiss_popups()
         return self._delete_loop("replies", max_deletes)
 

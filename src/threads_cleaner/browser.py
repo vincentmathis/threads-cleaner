@@ -428,9 +428,11 @@ class BrowserDeleter:
                 console.print("[red]Session expired.[/]")
                 break
 
-            if self._delete_reply_on_thread(username):
+            if self._delete_next_item(username=username):
                 deleted += 1
                 console.print(f"[green]✓[/] deleted reply {deleted}")
+            else:
+                console.print(f"[yellow]  no reply found on this thread[/]")
 
             # Go back to replies page
             try:
@@ -440,64 +442,6 @@ class BrowserDeleter:
             time.sleep(2)
 
         return deleted
-
-    def _delete_reply_on_thread(self, username: str) -> bool:
-        """Find and delete the user's own reply on the current thread page."""
-        try:
-            pos = self._page.evaluate(r"""
-                (username) => {
-                    const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    const pattern = new RegExp('/@' + escaped + '(/|$|\\?|#)');
-
-                    // Find the user's avatar link, walk up to reply container, find More button
-                    for (const img of document.querySelectorAll('a[href] img')) {
-                        const link = img.closest('a');
-                        if (!link || !pattern.test(link.getAttribute('href'))) continue;
-
-                        let el = link;
-                        for (let i = 0; i < 12; i++) {
-                            el = el.parentElement;
-                            if (!el) break;
-                            const more = el.querySelector('[aria-label="More"]');
-                            if (more && more.offsetParent !== null) {
-                                const r = more.getBoundingClientRect();
-                                if (r.width >= 5 && r.height >= 5) {
-                                    return {found: true, x: r.x + r.width / 2, y: r.y + r.height / 2};
-                                }
-                            }
-                        }
-                    }
-                    return {found: false};
-                }
-            """, username)
-        except:
-            return False
-
-        if not pos.get("found"):
-            return False
-
-        # Click More — use page.mouse.click since the thread page is cleaner (no card overlay)
-        self._page.mouse.click(pos["x"], pos["y"])
-        time.sleep(1.2)
-
-        # Find and click Delete in the menu
-        if not self._click_menu_delete():
-            self._page.keyboard.press("Escape")
-            time.sleep(0.5)
-            return False
-        time.sleep(1.2)
-
-        # Confirm
-        if self._click_confirm_delete():
-            time.sleep(2)
-            had_error = self._has_error_toast()
-            self._dismiss_toasts()
-            return not had_error
-
-        time.sleep(2.5)
-        had_error = self._has_error_toast()
-        self._dismiss_toasts()
-        return not had_error
 
 def run_browser_delete(*, include_replies=False, max_deletes=None, dry_run=False, yes=False, headed=False):
     session = config.load_session()

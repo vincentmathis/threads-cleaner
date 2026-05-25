@@ -400,11 +400,9 @@ class BrowserDeleter:
                     else if (!h.startsWith('http')) continue;
                     try { var u = new URL(h); } catch(e) { continue; }
                     if (!/threads\.(com|net)$/i.test(u.hostname)) continue;
-                    const p = u.pathname;
-                    if (p === '/' || p === '/home' || p.startsWith('/search') ||
-                        p.startsWith('/notifications') || p.startsWith('/messages') ||
-                        p.startsWith('/settings')) continue;
-                    if (/^\/@\w+\/?$/.test(p)) continue;
+                    const p = u.pathname.replace(/\/+$/, '');
+                    // Only keep actual thread URLs: /@username/post/POSTID
+                    if (!/^\/@\w+\/post\/\w+$/.test(p)) continue;
                     urls.add(u.href);
                 }
                 return Array.from(urls);

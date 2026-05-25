@@ -429,13 +429,64 @@ class BrowserDeleter:
                 console.print("[red]Session expired.[/]")
                 break
 
-            if self._delete_next_item(username=username):
+            if self._delete_reply_on_thread(username):
                 deleted += 1
                 console.print(f"[green]✓[/] deleted reply {deleted}")
             else:
                 console.print(f"[yellow]  no reply found on this thread[/]")
 
             # Go back to replies page
+            try:
+                self._page.goto(replies_url, wait_until="domcontentloaded", timeout=30000)
+            except:
+                pass
+            time.sleep(2)
+
+        return deleted
+
+    def _delete_reply_on_thread(self, username: str) -> bool:
+        coords = self._page.evaluate(r"""
+            (username) => {
+                const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const pattern = new RegExp('/@' + escaped + '(/|$|\\?|#)');
+                const all = document.querySelectorAll('[aria-label="More"]');
+                const candidates = [];
+                for (const btn of all) {
+                    if (btn.offsetParent === null) continue;
+                    const r = btn.getBoundingClientRect();
+                    if (r.width < 5 || r.height < 5 || r.y < 100) continue;
+                    const parent = btn.parentElement;
+                    if (!parent) continue;
+                    for (const link of parent.querySelectorAll(':scope > a[href]')) {
+                        if (link.querySelector('img') && pattern.test(link.getAttribute('href'))) {
+                            candidates.push({x: r.x + r.width / 2, y: r.y + r.height / 2});
+                            break;
+                        }
+                    }
+                }
+                if (candidates.length === 0) return null;
+                candidates.sort((a, b) => b.y - a.y);
+                return candidates[0];
+            }
+        """, username)
+        if coords is None:
+            return False
+        self._page.mouse.click(coords["x"], coords["y"])
+        time.sleep(1.2)
+        if not self._click_menu_delete():
+            self._page.keyboard.press("Escape")
+            time.sleep(0.5)
+            return False
+        time.sleep(1.2)
+        if self._click_confirm_delete():
+            time.sleep(2)
+            had_error = self._has_error_toast()
+            self._dismiss_toasts()
+            return not had_error
+        time.sleep(2.5)
+        had_error = self._has_error_toast()
+        self._dismiss_toasts()
+        return not had_error
             try:
                 self._page.goto(replies_url, wait_until="domcontentloaded", timeout=30000)
             except:

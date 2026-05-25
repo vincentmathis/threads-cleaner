@@ -17,6 +17,7 @@ class BrowserDeleter:
         self._context = None
         self._page = None
         self._pw = None
+        self._tried_positions: set[tuple[int, int]] = set()
 
     def _cookies_for_playwright(self) -> list[dict]:
         cookies = []
@@ -83,35 +84,86 @@ class BrowserDeleter:
             time.sleep(0.3)
         except: pass
 
-    def _find_and_click_more(self) -> bool:
-        result = self._page.evaluate("""
-            (() => {
-                const selectors = [
-                    'svg[aria-label="More"]',
-                    'button[aria-label="More"]',
-                    '[aria-label="More"]',
-                    'svg[aria-label="More options"]',
-                ];
-                for (const sel of selectors) {
-                    const icons = document.querySelectorAll(sel);
-                    for (const icon of icons) {
-                        if (icon.offsetParent === null) continue;
-                        if (icon.dataset.tried) continue;
-                        const r = icon.getBoundingClientRect();
-                        if (r.width < 5 || r.height < 5) continue;
-                        if (r.y < 100) continue;
-                        // Mark tried IMMEDIATELY — prevents infinite loops
-                        icon.dataset.tried = '1';
-                        return {x: r.x + r.width / 2, y: r.y + r.height / 2};
-                    }
+    def _find_and_click_more(self, *, username: str | None = None) -> bool:
+        tried_list = [[p[0], p[1]] for p in self._tried_positions]
+        result = self._page.evaluate(r"""
+            ({tried, username}) => {
+                const triedMap = {};
+                for (const [tx, ty] of tried) {
+                    const k = Math.round(tx/10)*10 + ',' + Math.round(ty/10)*10;
+                    triedMap[k] = true;
                 }
-                return null;
-            })()
-        """)
+
+                // Build pattern for matching profile links
+                const escaped = username ? username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
+                const profilePattern = username ? new RegExp('/@' + escaped + '(/|$|\\?|#)') : null;
+
+                const all = document.querySelectorAll(
+                    'svg[aria-label="More"], button[aria-label="More"], [aria-label="More"], svg[aria-label="More options"]'
+                );
+                const candidates = [];
+
+                for (const icon of all) {
+                    if (icon.offsetParent === null) continue;
+                    const r = icon.getBoundingClientRect();
+                    if (r.width < 5 || r.height < 5) continue;
+                    if (r.y < 100) continue;
+                    const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
+                    const k = Math.round(cx/10)*10 + ',' + Math.round(cy/10)*10;
+                    if (triedMap[k]) continue;
+
+                    // Check if this specific More button is inside the user's own reply section.
+                    // Walk up only 3 levels — level 4 reaches the thread card (false positive).
+                    let inUserPost = false;
+                    if (username && profilePattern) {
+                        let el = icon;
+                        for (let i = 0; i < 3; i++) {
+                            el = el.parentElement;
+                            if (!el) break;
+                            const avatarImg = el.querySelector('a[href] img');
+                            if (avatarImg) {
+                                const link = avatarImg.closest('a');
+                                if (link && profilePattern.test(link.getAttribute('href'))) {
+                                    inUserPost = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!inUserPost) continue;
+                    }
+
+                    // Dispatch directly on the icon or its immediate button parent (max 2 levels up).
+                    // DO NOT walk up to the card — event.target must be the button, not the card.
+                    let target = icon;
+                    for (let i = 0; i < 2; i++) {
+                        const p = target.parentElement;
+                        if (!p) break;
+                        if (p.tagName === 'BUTTON' || p.getAttribute('role') === 'button') {
+                            target = p;
+                            break;
+                        }
+                        target = p;
+                    }
+                    candidates.push({cx, cy, target});
+                }
+
+                if (candidates.length === 0) return null;
+                candidates.sort((a, b) => b.cy - a.cy);
+                const chosen = candidates[0];
+
+                // Dispatch events directly — bypasses overlays
+                const evtOpts = {bubbles: true, cancelable: true, composed: true};
+                chosen.target.dispatchEvent(new PointerEvent('pointerdown', evtOpts));
+                chosen.target.dispatchEvent(new PointerEvent('pointerup', evtOpts));
+                chosen.target.dispatchEvent(new MouseEvent('click', evtOpts));
+
+                return {x: chosen.cx, y: chosen.cy};
+            }
+        """, {"tried": tried_list, "username": username})
         if result is None:
             return False
-        self._page.mouse.click(result["x"], result["y"])
-        time.sleep(0.3)
+        k = round(result["x"] / 10) * 10, round(result["y"] / 10) * 10
+        self._tried_positions.add(k)
         return True
 
     def _click_menu_delete(self) -> bool:
@@ -182,9 +234,9 @@ class BrowserDeleter:
             })()
         """)
 
-    def _delete_next_item(self) -> bool:
+    def _delete_next_item(self, *, username: str | None = None) -> bool:
         self._dismiss_toasts()
-        if not self._find_and_click_more():
+        if not self._find_and_click_more(username=username):
             return False
         time.sleep(1.2)
         if not self._click_menu_delete():
@@ -224,21 +276,23 @@ class BrowserDeleter:
     def _svg_count(self) -> int:
         return self._page.evaluate("document.querySelectorAll('svg[aria-label=\"More\"], button[aria-label=\"More\"], [aria-label=\"More\"]').length")
 
-    def _delete_loop(self, label: str, max_deletes: int = 0) -> int:
+    def _delete_loop(self, label: str, max_deletes: int = 0, *, username: str | None = None) -> int:
         deleted = 0
         consecutive_fails = 0
         total_fails = 0
         scrolls_without_new_svg = 0
+        scrolls_since_last_delete = 0
         while True:
             if max_deletes and deleted >= max_deletes:
                 console.print(f"[dim]  hit limit of {max_deletes} {label}[/]")
                 break
-            ok = self._delete_next_item()
+            ok = self._delete_next_item(username=username)
             if ok:
                 deleted += 1
                 consecutive_fails = 0
                 total_fails = 0
                 scrolls_without_new_svg = 0
+                scrolls_since_last_delete = 0
                 if deleted % 5 == 0:
                     svgs = self._svg_count()
                     console.print(f"[green]✓[/] deleted {deleted} {label}  [dim]({svgs} SVGs)[/]")
@@ -252,6 +306,10 @@ class BrowserDeleter:
                 svgs_before = self._svg_count()
                 self._scroll_down()
                 svgs_after = self._svg_count()
+                scrolls_since_last_delete += 1
+                if scrolls_since_last_delete > 50:
+                    console.print(f"[red]no deletions in {scrolls_since_last_delete} scrolls, giving up[/]")
+                    break
                 if svgs_after > svgs_before:
                     scrolls_without_new_svg = 0
                     console.print(f"[blue]↓[/] scrolled — {svgs_after} SVGs (was {svgs_before})")
@@ -293,13 +351,161 @@ class BrowserDeleter:
             console.print("[yellow]Run [bold]threads-cleaner browser-login[/] to refresh the session.[/]")
             raise RuntimeError("Session expired or invalid")
         self._dismiss_popups()
-        return self._delete_loop("replies", max_deletes)
+
+        # Scroll the replies page to load more thread entries
+        console.print("[dim]  scrolling replies page to load threads...[/]")
+        for s in range(6):
+            self._page.mouse.click(200, 600)
+            time.sleep(0.2)
+            for _ in range(3):
+                self._page.mouse.wheel(0, 2000)
+                time.sleep(0.3)
+            time.sleep(2)
+            # Check for load more buttons
+            try:
+                btn = self._page.locator('button:has-text("Show more"), button:has-text("Load more"), button:has-text("View more")').first
+                if btn.is_visible(timeout=500):
+                    btn.click(timeout=1000)
+                    time.sleep(2)
+            except: pass
+        time.sleep(2)
+
+        # Collect thread URLs from the replies page
+        all_links = self._page.evaluate(r"""
+            () => {
+                const paths = new Set();
+                for (const a of document.querySelectorAll('a[href]')) {
+                    let h = a.getAttribute('href');
+                    if (!h) continue;
+                    if (h.startsWith('//')) h = 'https:' + h;
+                    else if (h.startsWith('/')) h = window.location.origin + h;
+                    try { var u = new URL(h); } catch(e) { continue; }
+                    if (!/threads\.(com|net)$/i.test(u.hostname)) continue;
+                    paths.add(u.pathname);
+                }
+                return Array.from(paths).slice(0, 30);
+            }
+        """)
+        console.print(f"[dim]  page links (first 30): {all_links}[/]")
+
+        thread_urls = self._page.evaluate(r"""
+            () => {
+                const urls = new Set();
+                const base = window.location.origin;
+                for (const a of document.querySelectorAll('a[href]')) {
+                    let h = a.getAttribute('href');
+                    if (!h) continue;
+                    if (h.startsWith('//')) h = 'https:' + h;
+                    else if (h.startsWith('/')) h = base + h;
+                    else if (!h.startsWith('http')) continue;
+                    try { var u = new URL(h); } catch(e) { continue; }
+                    if (!/threads\.(com|net)$/i.test(u.hostname)) continue;
+                    const p = u.pathname;
+                    if (p === '/' || p === '/home' || p.startsWith('/search') ||
+                        p.startsWith('/notifications') || p.startsWith('/messages') ||
+                        p.startsWith('/settings')) continue;
+                    if (/^\/@\w+\/?$/.test(p)) continue;
+                    urls.add(u.href);
+                }
+                return Array.from(urls);
+            }
+        """)
+        console.print(f"[dim]  found {len(thread_urls)} thread-like links: {thread_urls[:5]}{'...' if len(thread_urls) > 5 else ''}[/]")
+        console.print(f"[dim]  found {len(thread_urls)} threads with replies[/]")
+
+        deleted = 0
+        for idx, thread_url in enumerate(thread_urls):
+            if max_deletes and deleted >= max_deletes:
+                console.print(f"[dim]  hit limit of {max_deletes} replies[/]")
+                break
+
+            console.print(f"[dim]  ({idx+1}/{len(thread_urls)}) opening thread...[/]")
+            try:
+                self._page.goto(thread_url, wait_until="domcontentloaded", timeout=30000)
+            except:
+                pass
+            time.sleep(3)
+            self._dismiss_popups()
+            if "login" in self._page.url.lower():
+                console.print("[red]Session expired.[/]")
+                break
+
+            if self._delete_reply_on_thread(username):
+                deleted += 1
+                console.print(f"[green]✓[/] deleted reply {deleted}")
+
+            # Go back to replies page
+            try:
+                self._page.goto(replies_url, wait_until="domcontentloaded", timeout=30000)
+            except:
+                pass
+            time.sleep(2)
+
+        return deleted
+
+    def _delete_reply_on_thread(self, username: str) -> bool:
+        """Find and delete the user's own reply on the current thread page."""
+        try:
+            pos = self._page.evaluate(r"""
+                (username) => {
+                    const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const pattern = new RegExp('/@' + escaped + '(/|$|\\?|#)');
+
+                    // Find the user's avatar link, walk up to reply container, find More button
+                    for (const img of document.querySelectorAll('a[href] img')) {
+                        const link = img.closest('a');
+                        if (!link || !pattern.test(link.getAttribute('href'))) continue;
+
+                        let el = link;
+                        for (let i = 0; i < 12; i++) {
+                            el = el.parentElement;
+                            if (!el) break;
+                            const more = el.querySelector('[aria-label="More"]');
+                            if (more && more.offsetParent !== null) {
+                                const r = more.getBoundingClientRect();
+                                if (r.width >= 5 && r.height >= 5) {
+                                    return {found: true, x: r.x + r.width / 2, y: r.y + r.height / 2};
+                                }
+                            }
+                        }
+                    }
+                    return {found: false};
+                }
+            """, username)
+        except:
+            return False
+
+        if not pos.get("found"):
+            return False
+
+        # Click More — use page.mouse.click since the thread page is cleaner (no card overlay)
+        self._page.mouse.click(pos["x"], pos["y"])
+        time.sleep(1.2)
+
+        # Find and click Delete in the menu
+        if not self._click_menu_delete():
+            self._page.keyboard.press("Escape")
+            time.sleep(0.5)
+            return False
+        time.sleep(1.2)
+
+        # Confirm
+        if self._click_confirm_delete():
+            time.sleep(2)
+            had_error = self._has_error_toast()
+            self._dismiss_toasts()
+            return not had_error
+
+        time.sleep(2.5)
+        had_error = self._has_error_toast()
+        self._dismiss_toasts()
+        return not had_error
 
 def run_browser_delete(*, include_replies=False, max_deletes=None, dry_run=False, yes=False, headed=False):
     session = config.load_session()
     if not session:
         raise RuntimeError("Not logged in. Run:  threads-cleaner browser-login")
-    targets = "posts" + (" + replies" if include_replies else "")
+    targets = "replies" if include_replies else "posts"
     label = f" (max {max_deletes})" if max_deletes else ""
     mode = "DRY RUN (no deletes)" if dry_run else "LIVE"
     console.print("[bold]Threads Cleaner - Browser Delete[/bold]\n"
@@ -315,10 +521,10 @@ def run_browser_delete(*, include_replies=False, max_deletes=None, dry_run=False
     try:
         deleter.start()
         total = 0
-        total += deleter.delete_posts(max_deletes or 0)
         if include_replies:
-            remaining = (max_deletes - total) if max_deletes else 0
-            total += deleter.delete_replies(remaining)
+            total += deleter.delete_replies(max_deletes or 0)
+        else:
+            total += deleter.delete_posts(max_deletes or 0)
         console.print(f"\n[bold green]Done.[/] Deleted {total} item(s).")
     finally:
         deleter.stop()

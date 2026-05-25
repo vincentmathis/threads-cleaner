@@ -487,13 +487,6 @@ class BrowserDeleter:
         had_error = self._has_error_toast()
         self._dismiss_toasts()
         return not had_error
-            try:
-                self._page.goto(replies_url, wait_until="domcontentloaded", timeout=30000)
-            except:
-                pass
-            time.sleep(2)
-
-        return deleted
 
 def run_browser_delete(*, include_replies=False, max_deletes=None, dry_run=False, yes=False, headed=False):
     session = config.load_session()

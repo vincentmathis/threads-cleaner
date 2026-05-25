@@ -112,22 +112,23 @@ class BrowserDeleter:
                     const k = Math.round(cx/10)*10 + ',' + Math.round(cy/10)*10;
                     if (triedMap[k]) continue;
 
-                    // Check if this specific More button is inside the user's own reply section.
-                    // Walk up only 3 levels — level 4 reaches the thread card (false positive).
+                    // Check if this More button is near the user's avatar.
+                    // Walk up 3 levels, but only search DIRECT children to avoid
+                    // false-matching an avatar in a completely different reply/post.
                     let inUserPost = false;
                     if (username && profilePattern) {
                         let el = icon;
                         for (let i = 0; i < 3; i++) {
                             el = el.parentElement;
                             if (!el) break;
-                            const avatarImg = el.querySelector('a[href] img');
-                            if (avatarImg) {
-                                const link = avatarImg.closest('a');
-                                if (link && profilePattern.test(link.getAttribute('href'))) {
+                            const directLinks = el.querySelectorAll(':scope > a, :scope > button > a, :scope > div > a');
+                            for (const link of directLinks) {
+                                if (link.querySelector('img') && profilePattern.test(link.getAttribute('href'))) {
                                     inUserPost = true;
                                     break;
                                 }
                             }
+                            if (inUserPost) break;
                         }
                         if (!inUserPost) continue;
                     }

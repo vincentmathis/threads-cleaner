@@ -39,6 +39,9 @@ def browser_delete(
     headed: bool = typer.Option(
         False, "--headed", help="Show the browser window (for debugging)."
     ),
+    older_than: Optional[str] = typer.Option(
+        None, "--older-than", help="Only delete items older than this (e.g. 30d, 7d, 24h, 2w, 1m)."
+    ),
 ):
     """Delete posts (and optionally replies) via a real browser (Playwright). Clicks the UI like a human."""
     try:
@@ -48,6 +51,7 @@ def browser_delete(
             dry_run=dry_run,
             yes=yes,
             headed=headed,
+            older_than=older_than,
         )
     except Exception as e:
         console.print(f"[red]Error:[/] {e}")
@@ -57,16 +61,45 @@ def browser_delete(
 @app.command()
 def install_browser():
     """Install the Chromium browser required by Playwright."""
-    import subprocess, sys
+    import subprocess, sys, os
+    from shutil import which
+
     console.print("[yellow]Installing Chromium browser for Playwright...[/]")
-    result = subprocess.run(
-        [sys.executable, "-m", "playwright", "install", "chromium"],
-        capture_output=False,
-    )
-    if result.returncode == 0:
-        console.print("[green]Chromium installed![/] Run [bold]threads-cleaner browser-login[/] to start.")
-    else:
-        console.print("[red]Installation failed.[/] Try manually: [bold]playwright install chromium[/]")
+    try:
+        # Try `playwright` CLI from PATH first
+        pw = which("playwright")
+        if pw:
+            subprocess.run([pw, "install", "chromium"], check=True)
+            console.print("[green]Chromium installed![/]")
+            return
+
+        # Try system python -m playwright
+        for python in ("python3", "python"):
+            py = which(python)
+            if py:
+                try:
+                    subprocess.run([py, "-m", "playwright", "install", "chromium"], check=True)
+                    console.print("[green]Chromium installed![/]")
+                    return
+                except: pass
+
+        # Fallback: use bundled Playwright's Node.js driver directly
+        from playwright._impl._driver import compute_driver_executable, get_driver_env
+        driver_exe, driver_cli = compute_driver_executable()
+        env = get_driver_env()
+        # Point browser install to the user profile (not the PyInstaller temp dir)
+        pw_browsers = os.path.join(os.environ.get("USERPROFILE", ""), "AppData", "Local", "ms-playwright")
+        env["PLAYWRIGHT_BROWSERS_PATH"] = pw_browsers
+        result = subprocess.run(
+            [driver_exe, driver_cli, "install", "chromium"],
+            env=env, capture_output=False,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"driver exited with code {result.returncode}")
+        console.print("[green]Chromium installed![/]")
+    except Exception as e:
+        console.print(f"[red]Installation failed: {e}[/]")
+        console.print("Try manually from a terminal with Python+Playwright: [bold]playwright install chromium[/]")
         raise typer.Exit(1)
 
 

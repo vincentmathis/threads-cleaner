@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 import time
+from datetime import datetime, timedelta, timezone
 
 from rich.console import Console
 
@@ -10,14 +12,34 @@ console = Console()
 
 
 class BrowserDeleter:
-    def __init__(self, session: dict, *, headed: bool = False):
+    def __init__(self, session: dict, *, headed: bool = False, older_than: str | None = None):
         self.session = session
         self._headed = headed
         self._browser = None
         self._context = None
         self._page = None
         self._pw = None
-        self._tried_positions: set[tuple[int, int]] = set()
+        self._older_than = self._parse_older_than(older_than) if older_than else None
+
+    @staticmethod
+    def _parse_older_than(value: str) -> str:
+        match = re.match(r'^(\d+)([hdwmy])$', value.lower().strip())
+        if not match:
+            raise ValueError(f"Invalid --older-than format: '{value}'. Use e.g. 30d, 7d, 24h, 2w, 1m")
+        num = int(match.group(1))
+        unit = match.group(2)
+        now = datetime.now(timezone.utc)
+        if unit == 'h':
+            threshold = now - timedelta(hours=num)
+        elif unit == 'd':
+            threshold = now - timedelta(days=num)
+        elif unit == 'w':
+            threshold = now - timedelta(weeks=num)
+        elif unit == 'm':
+            threshold = now - timedelta(days=num * 30)
+        elif unit == 'y':
+            threshold = now - timedelta(days=num * 365)
+        return threshold.isoformat()
 
     def _cookies_for_playwright(self) -> list[dict]:
         cookies = []
@@ -36,6 +58,15 @@ class BrowserDeleter:
         return cookies
 
     def start(self):
+        import os
+        # PyInstaller bundles Playwright's driver into a temp dir, which makes
+        # the driver look for browsers there instead of the user profile.
+        # Tell it to use the standard install location.
+        pw_browsers = os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or os.path.join(
+            os.environ.get("USERPROFILE", ""), "AppData", "Local", "ms-playwright"
+        )
+        if os.path.isdir(pw_browsers):
+            os.environ["PLAYWRIGHT_BROWSERS_PATH"] = pw_browsers
         from playwright.sync_api import sync_playwright
         self._pw = sync_playwright().start()
         try:
@@ -45,8 +76,8 @@ class BrowserDeleter:
             )
         except Exception as e:
             msg = str(e)
-            if "Executable doesn't exist" in msg or "executable" in msg.lower() and "playwright" in msg.lower():
-                console.print("[red]Chromium browser not found.[/]")
+            console.print(f"[red]{msg}[/]")
+            if "executable" in msg.lower():
                 console.print("Run: [bold]threads-cleaner install-browser[/]")
                 raise RuntimeError("Playwright browser not installed") from e
             raise
@@ -84,133 +115,30 @@ class BrowserDeleter:
             time.sleep(0.3)
         except: pass
 
-    def _find_and_click_more(self, *, username: str | None = None) -> bool:
-        tried_list = [[p[0], p[1]] for p in self._tried_positions]
-        result = self._page.evaluate(r"""
-            ({tried, username}) => {
-                const triedMap = {};
-                for (const [tx, ty] of tried) {
-                    const k = Math.round(tx/10)*10 + ',' + Math.round(ty/10)*10;
-                    triedMap[k] = true;
-                }
-
-                // Build pattern for matching profile links
-                const escaped = username ? username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
-                const profilePattern = username ? new RegExp('/@' + escaped + '(/|$|\\?|#)') : null;
-
-                const all = document.querySelectorAll(
-                    'svg[aria-label="More"], button[aria-label="More"], [aria-label="More"], svg[aria-label="More options"]'
-                );
-                const candidates = [];
-
-                for (const icon of all) {
-                    if (icon.offsetParent === null) continue;
-                    const r = icon.getBoundingClientRect();
-                    if (r.width < 5 || r.height < 5) continue;
-                    if (r.y < 100) continue;
-                    const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
-                    const k = Math.round(cx/10)*10 + ',' + Math.round(cy/10)*10;
-                    if (triedMap[k]) continue;
-
-                    // Check if this More button is near the user's avatar.
-                    // Walk up 3 levels, but only search DIRECT children to avoid
-                    // false-matching an avatar in a completely different reply/post.
-                    let inUserPost = false;
-                    if (username && profilePattern) {
-                        let el = icon;
-                        for (let i = 0; i < 3; i++) {
-                            el = el.parentElement;
-                            if (!el) break;
-                            const directLinks = el.querySelectorAll(':scope > a, :scope > button > a, :scope > div > a');
-                            for (const link of directLinks) {
-                                if (link.querySelector('img') && profilePattern.test(link.getAttribute('href'))) {
-                                    inUserPost = true;
-                                    break;
-                                }
-                            }
-                            if (inUserPost) break;
-                        }
-                        if (!inUserPost) continue;
-                    }
-
-                    // Dispatch directly on the icon or its immediate button parent (max 2 levels up).
-                    // DO NOT walk up to the card — event.target must be the button, not the card.
-                    let target = icon;
-                    for (let i = 0; i < 2; i++) {
-                        const p = target.parentElement;
-                        if (!p) break;
-                        if (p.tagName === 'BUTTON' || p.getAttribute('role') === 'button') {
-                            target = p;
-                            break;
-                        }
-                        target = p;
-                    }
-                    candidates.push({cx, cy, target});
-                }
-
-                if (candidates.length === 0) return null;
-                candidates.sort((a, b) => b.cy - a.cy);
-                const chosen = candidates[0];
-
-                // Dispatch events directly — bypasses overlays
-                const evtOpts = {bubbles: true, cancelable: true, composed: true};
-                chosen.target.dispatchEvent(new PointerEvent('pointerdown', evtOpts));
-                chosen.target.dispatchEvent(new PointerEvent('pointerup', evtOpts));
-                chosen.target.dispatchEvent(new MouseEvent('click', evtOpts));
-
-                return {x: chosen.cx, y: chosen.cy};
-            }
-        """, {"tried": tried_list, "username": username})
-        if result is None:
-            return False
-        k = round(result["x"] / 10) * 10, round(result["y"] / 10) * 10
-        self._tried_positions.add(k)
-        return True
-
     def _click_menu_delete(self) -> bool:
-        pos = self._page.evaluate("""
-            (() => {
-                const exact = ['Delete', 'Delete reply', 'Remove'];
-                const popup = document.querySelector('[role="menu"], [role="dialog"], [role="alertdialog"]');
-                const scope = popup || document.body;
-                const all = scope.querySelectorAll('span, div, button, [role="button"]');
-                for (const el of all) {
-                    if (el.offsetParent === null) continue;
-                    const txt = (el.innerText || el.textContent || '').trim();
-                    if (exact.includes(txt)) {
-                        const r = el.getBoundingClientRect();
-                        return {x: r.x + r.width / 2, y: r.y + r.height / 2};
-                    }
-                }
-                return null;
-            })()
-        """)
-        if pos is None:
+        try:
+            item = self._page.locator('[role="menuitem"]').filter(
+                has_text=re.compile(r"Delete", re.IGNORECASE)
+            ).first
+            item.wait_for(state="attached", timeout=6000)
+            item.click(timeout=5000, force=True)
+            return True
+        except Exception:
             return False
-        self._page.mouse.click(pos["x"], pos["y"])
-        return True
 
     def _click_confirm_delete(self) -> bool:
-        pos = self._page.evaluate("""
-            (() => {
-                const exact = ['Delete', 'Delete reply', 'Remove'];
-                const all = document.querySelectorAll('span, div, button, [role="button"]');
-                for (const el of all) {
-                    if (el.offsetParent === null) continue;
-                    if (el.closest('[role="menu"]')) continue;
-                    const txt = (el.innerText || el.textContent || '').trim();
-                    if (exact.includes(txt)) {
-                        const r = el.getBoundingClientRect();
-                        return {x: r.x + r.width / 2, y: r.y + r.height / 2};
-                    }
-                }
-                return null;
-            })()
-        """)
-        if pos is None:
+        try:
+            time.sleep(0.5)
+            dialog = self._page.locator('[role="dialog"]').first
+            dialog.wait_for(state="visible", timeout=10000)
+            item = dialog.locator('[role="button"]').filter(
+                has_text=re.compile(r"Delete", re.IGNORECASE)
+            ).first
+            item.wait_for(state="attached", timeout=3000)
+            item.click(timeout=5000, force=True)
+            return True
+        except Exception:
             return False
-        self._page.mouse.click(pos["x"], pos["y"])
-        return True
 
     def _dismiss_toasts(self):
         try:
@@ -235,93 +163,118 @@ class BrowserDeleter:
             })()
         """)
 
-    def _delete_next_item(self, *, username: str | None = None) -> bool:
-        self._dismiss_toasts()
-        if not self._find_and_click_more(username=username):
+    def _delete_item_on_thread(self, username: str) -> bool:
+        """Find and delete the current user's More-button item on the current thread page.
+        Finds a container that has BOTH a user link AND a timestamp AND a
+        svg[aria-label="More"] — that container is the post wrapper, and the More
+        button inside it is the correct three-dot menu."""
+        candidate = self._page.evaluate(r"""
+            ({username, olderThan}) => {
+                const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const userPattern = new RegExp('/@' + escaped + '(/|$|\\?|#)');
+
+                // 1. Collect all svg[aria-label="More"] with positions
+                const moreSvgs = [];
+                for (const svg of document.querySelectorAll('svg[aria-label="More"]')) {
+                    const r = svg.getBoundingClientRect();
+                    if (r.width < 5 || r.height < 5) continue;
+                    // Walk up to clickable parent
+                    let target = svg.parentElement;
+                    for (let up = 0; up < 5; up++) {
+                        if (!target) break;
+                        if (target.tagName === 'BUTTON' || target.getAttribute('role') === 'button') break;
+                        target = target.parentElement;
+                    }
+                    if (!target) continue;
+                    moreSvgs.push({svg, target, y: r.y});
+                }
+                if (!moreSvgs.length) return false;
+
+                // 2. For each More SVG, find the closest parent container that has BOTH
+                //    a user link AND a timestamp (post container). Pick the SVG with
+                //    the smallest depth (tightest container) — avoids nav/sidebar SVGs
+                //    that match at a higher page level.
+                let bestTarget = null;
+                let bestDepth = 999;
+                let bestTime = null;
+                for (const {svg, target} of moreSvgs) {
+                    let container = target.parentElement;
+                    for (let d = 0; d < 10; d++) {
+                        if (!container || container.tagName === 'HTML' || container.tagName === 'BODY') break;
+                        const hasUser = Array.from(container.querySelectorAll('a[href]')).some(
+                            a => userPattern.test(a.getAttribute('href'))
+                        );
+                        const hasTime = container.querySelector('time[datetime]');
+                        if (hasUser && hasTime) {
+                            if (d < bestDepth) {
+                                bestDepth = d;
+                                bestTarget = target;
+                                bestTime = hasTime;
+                            }
+                            break; // don't go higher for this SVG
+                        }
+                        container = container.parentElement;
+                    }
+                }
+                if (!bestTarget) return false;
+
+                if (olderThan && bestTime) {
+                    const pd = new Date(bestTime.getAttribute('datetime'));
+                    if (!isNaN(pd.getTime()) && pd > new Date(olderThan)) return false;
+                }
+                bestTarget.setAttribute('data-oc-item', '1');
+                return true;
+            }
+        """, {"username": username, "olderThan": self._older_than})
+
+        if not candidate:
             return False
-        time.sleep(1.2)
+        try:
+            self._page.locator('[data-oc-item="1"]').first.click(timeout=5000)
+            self._page.evaluate("document.querySelectorAll('[data-oc-item]').forEach(e => e.removeAttribute('data-oc-item'))"
+)
+        except Exception:
+            return False
+        time.sleep(1.5)
         if not self._click_menu_delete():
             self._page.keyboard.press("Escape")
             time.sleep(0.5)
             return False
         time.sleep(1.2)
-        if self._click_confirm_delete():
-            time.sleep(2)
-            had_error = self._has_error_toast()
-            self._dismiss_toasts()
-            return not had_error
-        time.sleep(2.5)
+        if not self._click_confirm_delete():
+            return False
+        time.sleep(2)
         had_error = self._has_error_toast()
         self._dismiss_toasts()
-        if not had_error:
-            return True
-        return False
+        return not had_error
 
-    def _scroll_down(self):
-        # Click in content area first so wheel events reach the right element
-        self._page.mouse.click(200, 600)
-        time.sleep(0.2)
-        # Natural mouse wheel scroll — generates real scroll events for lazy loading
-        for _ in range(3):
-            self._page.mouse.wheel(0, 2000)
+    def _collect_post_urls(self, username: str) -> list[str]:
+        urls = self._page.evaluate(r"""
+            (username) => {
+                const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const pattern = new RegExp('^/@' + escaped + '/post/\\w+$');
+                const base = window.location.origin;
+                const result = new Set();
+                for (const a of document.querySelectorAll('a[href]')) {
+                    let h = a.getAttribute('href');
+                    if (!h) continue;
+                    if (h.startsWith('//')) h = 'https:' + h;
+                    else if (h.startsWith('/')) h = base + h;
+                    else if (!h.startsWith('http')) continue;
+                    try { var u = new URL(h); } catch(e) { continue; }
+                    if (!/threads\.(com|net)$/i.test(u.hostname)) continue;
+                    const p = u.pathname.replace(/\/+$/, '');
+                    if (pattern.test(p)) result.add(u.href);
+                }
+                return Array.from(result);
+            }
+        """, username)
+        return urls
+
+    def _scroll_page(self, times: int = 3):
+        for _ in range(times):
+            self._page.evaluate("window.scrollBy(0, 2000)")
             time.sleep(0.3)
-        time.sleep(3)
-        # Also check for any "Show more" / "Load more" buttons
-        try:
-            btn = self._page.locator('button:has-text("Show more"), button:has-text("Load more"), button:has-text("View more"), a:has-text("Show more")').first
-            if btn.is_visible(timeout=500):
-                btn.click(timeout=1000)
-                time.sleep(3)
-        except: pass
-
-    def _svg_count(self) -> int:
-        return self._page.evaluate("document.querySelectorAll('svg[aria-label=\"More\"], button[aria-label=\"More\"], [aria-label=\"More\"]').length")
-
-    def _delete_loop(self, label: str, max_deletes: int = 0, *, username: str | None = None) -> int:
-        deleted = 0
-        consecutive_fails = 0
-        total_fails = 0
-        scrolls_without_new_svg = 0
-        scrolls_since_last_delete = 0
-        while True:
-            if max_deletes and deleted >= max_deletes:
-                console.print(f"[dim]  hit limit of {max_deletes} {label}[/]")
-                break
-            ok = self._delete_next_item(username=username)
-            if ok:
-                deleted += 1
-                consecutive_fails = 0
-                total_fails = 0
-                scrolls_without_new_svg = 0
-                scrolls_since_last_delete = 0
-                if deleted % 5 == 0:
-                    svgs = self._svg_count()
-                    console.print(f"[green]✓[/] deleted {deleted} {label}  [dim]({svgs} SVGs)[/]")
-                continue
-            consecutive_fails += 1
-            total_fails += 1
-            if total_fails > 500:
-                console.print(f"[red]gave up after {total_fails} failures[/]")
-                break
-            if consecutive_fails >= 2:
-                svgs_before = self._svg_count()
-                self._scroll_down()
-                svgs_after = self._svg_count()
-                scrolls_since_last_delete += 1
-                if scrolls_since_last_delete > 50:
-                    console.print(f"[red]no deletions in {scrolls_since_last_delete} scrolls, giving up[/]")
-                    break
-                if svgs_after > svgs_before:
-                    scrolls_without_new_svg = 0
-                    console.print(f"[blue]↓[/] scrolled — {svgs_after} SVGs (was {svgs_before})")
-                else:
-                    scrolls_without_new_svg += 1
-                    console.print(f"[yellow]↓[/] scrolled — no new SVGs ({scrolls_without_new_svg}/20)")
-                    if scrolls_without_new_svg >= 20:
-                        console.print(f"[red]reached end of {label}[/]")
-                        break
-                consecutive_fails = 0
-        return deleted
 
     def delete_posts(self, max_deletes: int = 0) -> int:
         username = self.session.get("username", "")
@@ -336,7 +289,54 @@ class BrowserDeleter:
             console.print("[yellow]Run [bold]threads-cleaner browser-login[/] to refresh the session.[/]")
             raise RuntimeError("Session expired or invalid")
         self._dismiss_popups()
-        return self._delete_loop("posts", max_deletes)
+
+        # Scroll the profile page to load more post links
+        console.print("[dim]  scrolling profile to load posts...[/]")
+        for s in range(6):
+            self._scroll_page(3)
+            time.sleep(2)
+            try:
+                btn = self._page.locator('button:has-text("Show more"), button:has-text("Load more")').first
+                if btn.is_visible(timeout=500):
+                    btn.click(timeout=1000)
+                    time.sleep(2)
+            except: pass
+        time.sleep(2)
+
+        # Collect post URLs from the profile page
+        post_urls = self._collect_post_urls(username)
+        console.print(f"[dim]  found {len(post_urls)} post URLs[/]")
+
+        deleted = 0
+        for idx, post_url in enumerate(post_urls):
+            if max_deletes and deleted >= max_deletes:
+                console.print(f"[dim]  hit limit of {max_deletes} posts[/]")
+                break
+
+            console.print(f"[dim]  ({idx+1}/{len(post_urls)}) opening post...[/]")
+            try:
+                self._page.goto(post_url, wait_until="domcontentloaded", timeout=30000)
+            except: pass
+            time.sleep(3)
+            self._dismiss_popups()
+            if "login" in self._page.url.lower():
+                console.print("[red]Session expired.[/]")
+                break
+
+
+            if self._delete_item_on_thread(username):
+                deleted += 1
+                console.print(f"[green]OK[/] deleted post {deleted}")
+            else:
+                console.print(f"[yellow]  could not delete post on this page[/]")
+
+            # Go back to profile page for next iteration
+            try:
+                self._page.goto(profile_url, wait_until="domcontentloaded", timeout=30000)
+            except: pass
+            time.sleep(2)
+
+        return deleted
 
     def delete_replies(self, max_deletes: int = 0) -> int:
         username = self.session.get("username", "")
@@ -356,10 +356,8 @@ class BrowserDeleter:
         # Scroll the replies page to load more thread entries
         console.print("[dim]  scrolling replies page to load threads...[/]")
         for s in range(6):
-            self._page.mouse.click(200, 600)
-            time.sleep(0.2)
             for _ in range(3):
-                self._page.mouse.wheel(0, 2000)
+                self._page.evaluate("window.scrollBy(0, 2000)")
                 time.sleep(0.3)
             time.sleep(2)
             # Check for load more buttons
@@ -372,23 +370,6 @@ class BrowserDeleter:
         time.sleep(2)
 
         # Collect thread URLs from the replies page
-        all_links = self._page.evaluate(r"""
-            () => {
-                const paths = new Set();
-                for (const a of document.querySelectorAll('a[href]')) {
-                    let h = a.getAttribute('href');
-                    if (!h) continue;
-                    if (h.startsWith('//')) h = 'https:' + h;
-                    else if (h.startsWith('/')) h = window.location.origin + h;
-                    try { var u = new URL(h); } catch(e) { continue; }
-                    if (!/threads\.(com|net)$/i.test(u.hostname)) continue;
-                    paths.add(u.pathname);
-                }
-                return Array.from(paths).slice(0, 30);
-            }
-        """)
-        console.print(f"[dim]  page links (first 30): {all_links}[/]")
-
         thread_urls = self._page.evaluate(r"""
             () => {
                 const urls = new Set();
@@ -402,14 +383,12 @@ class BrowserDeleter:
                     try { var u = new URL(h); } catch(e) { continue; }
                     if (!/threads\.(com|net)$/i.test(u.hostname)) continue;
                     const p = u.pathname.replace(/\/+$/, '');
-                    // Only keep actual thread URLs: /@username/post/POSTID
                     if (!/^\/@\w+\/post\/\w+$/.test(p)) continue;
                     urls.add(u.href);
                 }
                 return Array.from(urls);
             }
         """)
-        console.print(f"[dim]  found {len(thread_urls)} thread-like links: {thread_urls[:5]}{'...' if len(thread_urls) > 5 else ''}[/]")
         console.print(f"[dim]  found {len(thread_urls)} threads with replies[/]")
 
         deleted = 0
@@ -429,9 +408,9 @@ class BrowserDeleter:
                 console.print("[red]Session expired.[/]")
                 break
 
-            if self._delete_reply_on_thread(username):
+            if self._delete_item_on_thread(username):
                 deleted += 1
-                console.print(f"[green]✓[/] deleted reply {deleted}")
+                console.print(f"[green]OK[/] deleted reply {deleted}")
             else:
                 console.print(f"[yellow]  no reply found on this thread[/]")
 
@@ -444,67 +423,25 @@ class BrowserDeleter:
 
         return deleted
 
-    def _delete_reply_on_thread(self, username: str) -> bool:
-        coords = self._page.evaluate(r"""
-            (username) => {
-                const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const pattern = new RegExp('/@' + escaped + '(/|$|\\?|#)');
-                const all = document.querySelectorAll('[aria-label="More"]');
-                const candidates = [];
-                for (const btn of all) {
-                    if (btn.offsetParent === null) continue;
-                    const r = btn.getBoundingClientRect();
-                    if (r.width < 5 || r.height < 5 || r.y < 100) continue;
-                    const parent = btn.parentElement;
-                    if (!parent) continue;
-                    for (const link of parent.querySelectorAll(':scope > a[href]')) {
-                        if (link.querySelector('img') && pattern.test(link.getAttribute('href'))) {
-                            candidates.push({x: r.x + r.width / 2, y: r.y + r.height / 2});
-                            break;
-                        }
-                    }
-                }
-                if (candidates.length === 0) return null;
-                candidates.sort((a, b) => b.y - a.y);
-                return candidates[0];
-            }
-        """, username)
-        if coords is None:
-            return False
-        self._page.mouse.click(coords["x"], coords["y"])
-        time.sleep(1.2)
-        if not self._click_menu_delete():
-            self._page.keyboard.press("Escape")
-            time.sleep(0.5)
-            return False
-        time.sleep(1.2)
-        if self._click_confirm_delete():
-            time.sleep(2)
-            had_error = self._has_error_toast()
-            self._dismiss_toasts()
-            return not had_error
-        time.sleep(2.5)
-        had_error = self._has_error_toast()
-        self._dismiss_toasts()
-        return not had_error
 
-def run_browser_delete(*, include_replies=False, max_deletes=None, dry_run=False, yes=False, headed=False):
+def run_browser_delete(*, include_replies=False, max_deletes=None, dry_run=False, yes=False, headed=False, older_than=None):
     session = config.load_session()
     if not session:
         raise RuntimeError("Not logged in. Run:  threads-cleaner browser-login")
     targets = "replies" if include_replies else "posts"
     label = f" (max {max_deletes})" if max_deletes else ""
+    filter_label = f", older than {older_than}" if older_than else ""
     mode = "DRY RUN (no deletes)" if dry_run else "LIVE"
     console.print("[bold]Threads Cleaner - Browser Delete[/bold]\n"
                   f"  Mode: {mode}\n"
-                  f"  Targets: {targets}{label}\n")
+                  f"  Targets: {targets}{label}{filter_label}\n")
     if not dry_run and not yes:
         result = console.input("[yellow]This will delete items. Continue? [y/N] [/]")
         if result.lower() != "y": return
     if dry_run:
         console.print("[blue]Dry run — nothing was deleted.[/]")
         return
-    deleter = BrowserDeleter(session=session, headed=headed)
+    deleter = BrowserDeleter(session=session, headed=headed, older_than=older_than)
     try:
         deleter.start()
         total = 0

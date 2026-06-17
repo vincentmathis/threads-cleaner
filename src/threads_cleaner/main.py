@@ -71,33 +71,15 @@ def login():
 @app.command()
 def install_browser():
     """Install the Chromium browser required by Playwright."""
-    import subprocess, sys, os
-    from shutil import which
+    import subprocess, os
 
     console.print("[yellow]Installing Chromium browser for Playwright...[/]")
     try:
-        # Try `playwright` CLI from PATH first
-        pw = which("playwright")
-        if pw:
-            subprocess.run([pw, "install", "chromium"], check=True)
-            console.print("[green]Chromium installed![/]")
-            return
-
-        # Try system python -m playwright
-        for python in ("python3", "python"):
-            py = which(python)
-            if py:
-                try:
-                    subprocess.run([py, "-m", "playwright", "install", "chromium"], check=True)
-                    console.print("[green]Chromium installed![/]")
-                    return
-                except: pass
-
-        # Fallback: use bundled Playwright's Node.js driver directly
+        # Use Playwright's bundled Node.js driver — this always works from the
+        # PyInstaller exe and from normal Python. No need to mess with PATH.
         from playwright._impl._driver import compute_driver_executable, get_driver_env
         driver_exe, driver_cli = compute_driver_executable()
         env = get_driver_env()
-        # Point browser install to the user profile (not the PyInstaller temp dir)
         pw_browsers = os.path.join(os.environ.get("USERPROFILE", ""), "AppData", "Local", "ms-playwright")
         env["PLAYWRIGHT_BROWSERS_PATH"] = pw_browsers
         result = subprocess.run(

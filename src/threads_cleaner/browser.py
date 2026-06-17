@@ -176,11 +176,6 @@ class BrowserDeleter:
             })()
         """)
 
-    def _delete_item_on_thread(self, username: str) -> bool:
-        """Find and delete the current user's More-button item on the current thread page.
-        Finds a container that has BOTH a user link AND a timestamp AND a
-        svg[aria-label="More"] — that container is the post wrapper, and the More
-        button inside it is the correct three-dot menu."""
     def _delete_item_on_thread(self, username: str) -> str | None:
         """Find and delete the current user's More-button item on the current page.
         Returns the post's datetime string on success, None otherwise."""
@@ -312,7 +307,7 @@ class BrowserDeleter:
         time.sleep(4)
         if "login" in self._page.url.lower():
             console.print(f"[red]Not logged in (current URL: {self._page.url}).[/]")
-            console.print("[yellow]Run [bold]threads-cleaner browser-login[/] to refresh the session.[/]")
+            console.print("[yellow]Run [bold]threads-cleaner login[/] to refresh the session.[/]")
             raise RuntimeError("Session expired or invalid")
         self._dismiss_popups()
 
@@ -381,7 +376,7 @@ class BrowserDeleter:
         time.sleep(4)
         if "login" in self._page.url.lower():
             console.print(f"[red]Not logged in (current URL: {self._page.url}).[/]")
-            console.print("[yellow]Run [bold]threads-cleaner browser-login[/] to refresh the session.[/]")
+            console.print("[yellow]Run [bold]threads-cleaner login[/] to refresh the session.[/]")
             raise RuntimeError("Session expired or invalid")
         self._dismiss_popups()
 
@@ -416,7 +411,7 @@ def run_browser_delete(*, target="posts", max_deletes=None, dry_run=False, yes=F
                        older_than=None, newer_than=None):
     session = config.load_session()
     if not session:
-        raise RuntimeError("Not logged in. Run:  threads-cleaner browser-login")
+        raise RuntimeError("Not logged in. Run:  threads-cleaner login")
     label = f" (max {max_deletes})" if max_deletes else ""
     filters = []
     if older_than:

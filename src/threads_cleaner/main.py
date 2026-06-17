@@ -11,19 +11,9 @@ app     = typer.Typer(help="Bulk-delete your Threads posts and replies via brows
 console = Console()
 
 
-@app.command()
-def browser_login():
-    """Log in via a browser window (no manual cookie copying)."""
-    try:
-        run_browser_login()
-        console.print("Run [bold]threads-cleaner browser-delete --headed[/] to test it.")
-    except Exception as e:
-        console.print(f"[red]Login failed:[/] {e}")
-        raise typer.Exit(1)
-
-
-@app.command()
-def browser_delete(
+@app.callback(invoke_without_command=True)
+def main(
+    ctx: typer.Context,
     target: str = typer.Option(
         "posts", "--target", "-t", help="What to delete: posts, replies, or both."
     ),
@@ -47,6 +37,8 @@ def browser_delete(
     ),
 ):
     """Delete posts, replies, or both via a real browser (Playwright). Clicks the UI like a human."""
+    if ctx.invoked_subcommand is not None:
+        return
     if target not in ("posts", "replies", "both"):
         console.print("[red]--target must be 'posts', 'replies', or 'both'[/]")
         raise typer.Exit(1)
@@ -62,6 +54,17 @@ def browser_delete(
         )
     except Exception as e:
         console.print(f"[red]Error:[/] {e}")
+        raise typer.Exit(1)
+
+
+@app.command()
+def login():
+    """Log in via a browser window (no manual cookie copying)."""
+    try:
+        run_browser_login()
+        console.print("Run [bold]threads-cleaner --headed[/] to test it.")
+    except Exception as e:
+        console.print(f"[red]Login failed:[/] {e}")
         raise typer.Exit(1)
 
 

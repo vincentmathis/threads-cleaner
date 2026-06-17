@@ -24,22 +24,22 @@ threads-cleaner install-browser
 
 ```bash
 # 1. Log in (opens a phone-sized browser — go to threads.net, sign in, go to your profile)
-threads-cleaner browser-login
+threads-cleaner login
 
-# 2. Delete all posts
-threads-cleaner browser-delete
+# 2. Delete all posts (default action — no subcommand needed)
+threads-cleaner
 
 # 3. Watch what happens
-threads-cleaner browser-delete --headed --max 5
+threads-cleaner --headed --max 5
 ```
 
 ## Usage
 
-| Command | Description |
-|---------|-------------|
+| Command / Option | Description |
+|------------------|-------------|
+| *(default)* | Deletes posts/replies — no subcommand needed |
+| `login` | Opens a headed browser — log into Threads, session saved automatically |
 | `install-browser` | Download the Chromium browser required by Playwright |
-| `browser-login` | Opens a headed browser — log into Threads, session saved automatically |
-| `browser-delete` | Deletes posts, replies, or both via the Threads mobile web UI |
 | `--target`, `-t` | What to delete: `posts` (default), `replies`, or `both` |
 | `--max N`, `-m N` | Stop after N deletions (0 = unlimited) |
 | `--dry-run` | Open browser, navigate to profile, no destructive clicks |
@@ -50,24 +50,24 @@ threads-cleaner browser-delete --headed --max 5
 
 ```bash
 # Delete up to 10 posts, show browser
-threads-cleaner browser-delete --headed --max 10
+threads-cleaner --headed --max 10
 
 # Delete everything including replies, no prompts
-threads-cleaner browser-delete --target both --yes
+threads-cleaner --target both --yes
 
 # Preview what the tool would do
-threads-cleaner browser-delete --dry-run --headed
+threads-cleaner --dry-run --headed
 
 # Delete 50 replies only
-threads-cleaner browser-delete --target replies --max 50
+threads-cleaner --target replies --max 50
 ```
 
 ## How it works
 
-1. **`browser-login`** opens a Chromium window in mobile mode (390×844).  
+1. **`login`** opens a Chromium window in mobile mode (390×844).  
    You sign into `threads.net` — session cookies are saved to `~/.config/threads-cleaner/session.json`.
 
-2. **`browser-delete`** loads those cookies, navigates to your profile, and for each post:
+2. **`threads-cleaner`** (default action) loads those cookies, navigates to your profile, and for each post:
    - Clicks the **More** (⋮) button via Playwright's native mouse click
    - Clicks **Delete** in the mobile bottom-sheet menu
    - Clicks **Delete** in the confirmation dialog (or detects auto-deletion if no dialog appears)

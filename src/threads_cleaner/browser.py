@@ -358,8 +358,8 @@ class BrowserDeleter:
             raise RuntimeError("Session expired or invalid")
         self._dismiss_popups()
 
+        # Replies are shown directly on this page with their own More button
         deleted = 0
-        seen = set()
         scroll_stalls = 0
 
         while True:
@@ -367,86 +367,20 @@ class BrowserDeleter:
                 console.print(f"[dim]  hit limit of {max_deletes} replies[/]")
                 break
 
-            # Collect thread URLs from the replies page
-            thread_urls = self._page.evaluate(r"""
-                () => {
-                    const urls = new Set();
-                    const base = window.location.origin;
-                    for (const a of document.querySelectorAll('a[href]')) {
-                        let h = a.getAttribute('href');
-                        if (!h) continue;
-                        if (h.startsWith('//')) h = 'https:' + h;
-                        else if (h.startsWith('/')) h = base + h;
-                        else if (!h.startsWith('http')) continue;
-                        try { var u = new URL(h); } catch(e) { continue; }
-                        if (!/threads\.(com|net)$/i.test(u.hostname)) continue;
-                        const p = u.pathname.replace(/\/+$/, '');
-                        if (!/^\/@\w+\/post\/\w+$/.test(p)) continue;
-                        urls.add(u.href);
-                    }
-                    return Array.from(urls);
-                }
-            """)
-            new = [u for u in thread_urls if u not in seen]
-            seen.update(new)
-
-            if not new:
-                if scroll_stalls >= 10:
-                    break
-                scroll_stalls += 1
-                console.print(f"[dim]  scrolling for more threads... ({scroll_stalls}/10)[/]")
-                self._scroll_page(3)
+            if self._delete_item_on_thread(username):
+                deleted += 1
+                console.print(f"[green]OK[/] deleted reply {deleted}")
+                # Stay on the same page — reply was removed from DOM
                 time.sleep(2)
-                # Click "Show more" / "Load more" if present
-                try:
-                    btn = self._page.locator(
-                        'button:has-text("Show more"), button:has-text("Load more"), button:has-text("View more")'
-                    ).first
-                    if btn.is_visible(timeout=500):
-                        btn.click(timeout=1000)
-                        time.sleep(2)
-                except: pass
                 continue
 
-            scroll_stalls = 0
-
-            for thread_url in new:
-                if max_deletes and deleted >= max_deletes:
-                    break
-
-                console.print(f"[dim]  opening thread...[/]")
-                try:
-                    self._page.goto(thread_url, wait_until="domcontentloaded", timeout=30000)
-                except:
-                    pass
-                time.sleep(3)
-                self._dismiss_popups()
-                if "login" in self._page.url.lower():
-                    console.print("[red]Session expired.[/]")
-                    return deleted
-
-                # Try to find the reply — it may be buried, scroll within the thread
-                found = self._delete_item_on_thread(username)
-                if not found:
-                    for _ in range(5):
-                        self._scroll_page(2)
-                        time.sleep(1)
-                        if self._delete_item_on_thread(username):
-                            found = True
-                            break
-
-                if found:
-                    deleted += 1
-                    console.print(f"[green]OK[/] deleted reply {deleted}")
-                else:
-                    console.print(f"[yellow]  no reply found on this thread[/]")
-
-                # Go back to replies page
-                try:
-                    self._page.goto(replies_url, wait_until="domcontentloaded", timeout=30000)
-                except:
-                    pass
-                time.sleep(2)
+            # No reply found on screen — scroll down for more
+            scroll_stalls += 1
+            if scroll_stalls >= 10:
+                break
+            console.print(f"[dim]  scrolling for more replies... ({scroll_stalls}/10)[/]")
+            self._scroll_page(3)
+            time.sleep(2)
 
         return deleted
 

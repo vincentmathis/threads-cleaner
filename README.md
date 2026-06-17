@@ -9,10 +9,12 @@ No API keys, no developer account, no rate limits.
 ## Installation
 
 ```bash
-pip install threads-cleaner
+pipx install threads-cleaner
 # or
-uv add threads-cleaner
+uv tool install threads-cleaner
 ```
+
+You can also download a packaged .exe directly from [here](https://github.com/vincentmathis/threads-cleaner/releases/download/v1.0.0/threads-cleaner.exe)
 
 Then install the Chromium browser:
 
@@ -23,7 +25,7 @@ threads-cleaner install-browser
 ## Quick start
 
 ```bash
-# 1. Log in (opens a phone-sized browser — go to threads.net, sign in, go to your profile)
+# 1. Log in (opens a phone-sized browser — go to threads.com, sign in, go to your profile)
 threads-cleaner login
 
 # 2. Delete all posts (default action — no subcommand needed)
@@ -65,7 +67,7 @@ threads-cleaner --target replies --max 50
 ## How it works
 
 1. **`login`** opens a Chromium window in mobile mode (390×844).  
-   You sign into `threads.net` — session cookies are saved to `~/.config/threads-cleaner/session.json`.
+   You sign into `threads.com` — session cookies are saved to `~/.config/threads-cleaner/session.json`.
 
 2. **`threads-cleaner`** (default action) loads those cookies, navigates to your profile, and for each post:
    - Clicks the **More** (⋮) button via Playwright's native mouse click

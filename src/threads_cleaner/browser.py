@@ -383,6 +383,7 @@ class BrowserDeleter:
         # Replies are shown directly on this page with their own More button
         deleted = 0
         scroll_stalls = 0
+        total_scrolls = 0
 
         while True:
             if max_deletes and deleted >= max_deletes:
@@ -392,17 +393,33 @@ class BrowserDeleter:
             dt = self._delete_item_on_thread(username)
             if dt:
                 deleted += 1
+                scroll_stalls = 0
                 console.print(f"[green]OK[/] deleted reply {deleted}  ({dt})")
-                time.sleep(2)
+                # Nudge the page down a little after each deletion so Threads'
+                # intersection observer loads more items
+                self._page.evaluate("window.scrollBy(0, 400)")
+                time.sleep(1)
                 continue
 
             # No reply found on screen — scroll down for more
             scroll_stalls += 1
-            if scroll_stalls >= 10:
+            if scroll_stalls >= 20:
+                console.print(f"[dim]  no more replies found after {total_scrolls} scrolls[/]")
                 break
-            console.print(f"[dim]  scrolling for more replies... ({scroll_stalls}/10)[/]")
+            console.print(f"[dim]  scrolling for more replies... ({scroll_stalls}/20)[/]")
             self._scroll_page(3)
+            total_scrolls += 1
             time.sleep(2)
+            # Click "Show more" / "Load more" if present
+            try:
+                btn = self._page.locator(
+                    'button:has-text("Show more"), button:has-text("Load more"),'
+                    ' button:has-text("View more")'
+                ).first
+                if btn.is_visible(timeout=500):
+                    btn.click(timeout=1000)
+                    time.sleep(2)
+            except: pass
 
         return deleted
 

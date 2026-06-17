@@ -176,6 +176,7 @@ class BrowserDeleter:
                 // 1. Collect all svg[aria-label="More"] with positions
                 const moreSvgs = [];
                 for (const svg of document.querySelectorAll('svg[aria-label="More"]')) {
+                    if (svg.hasAttribute('data-oc-processed')) continue;
                     const r = svg.getBoundingClientRect();
                     if (r.width < 5 || r.height < 5) continue;
                     // Walk up to clickable parent
@@ -195,6 +196,7 @@ class BrowserDeleter:
                 //    the smallest depth (tightest container) — avoids nav/sidebar SVGs
                 //    that match at a higher page level.
                 let bestTarget = null;
+                let bestSvg = null;
                 let bestDepth = 999;
                 let bestTime = null;
                 for (const {svg, target} of moreSvgs) {
@@ -209,6 +211,7 @@ class BrowserDeleter:
                             if (d < bestDepth) {
                                 bestDepth = d;
                                 bestTarget = target;
+                                bestSvg = svg;
                                 bestTime = hasTime;
                             }
                             break; // don't go higher for this SVG
@@ -223,6 +226,7 @@ class BrowserDeleter:
                     if (!isNaN(pd.getTime()) && pd > new Date(olderThan)) return false;
                 }
                 bestTarget.setAttribute('data-oc-item', '1');
+                bestSvg.setAttribute('data-oc-processed', '1');
                 return true;
             }
         """, {"username": username, "olderThan": self._older_than})

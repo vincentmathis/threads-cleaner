@@ -1,5 +1,7 @@
 # threads-cleaner
 
+> 🌐 **Landing page: [vincentmathis.github.io/threads-cleaner](https://vincentmathis.github.io/threads-cleaner/)**
+
 Bulk-delete your Threads posts and replies via browser automation.  
 No API keys, no developer account, no rate limits.
 

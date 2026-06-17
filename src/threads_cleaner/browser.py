@@ -481,8 +481,8 @@ def run_browser_login() -> dict:
                 user_agent="Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.83 Mobile Safari/537.36",
             )
             page = ctx.new_page()
-            page.goto("about:blank")
-            console.print("[yellow]Go to [bold]https://www.threads.net/[/bold] -> log in -> go to your profile -> wait[/]")
+            page.goto("https://www.threads.com/", wait_until="domcontentloaded")
+            console.print("[yellow]Log in on threads.com, then go to your profile -> wait[/]")
             try:
                 page.wait_for_url("**/***@**", timeout=600000)
             except PwTimeout:

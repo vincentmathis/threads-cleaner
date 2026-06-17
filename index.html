@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>threads-cleaner</title>
+<style>
+  :root { --bg: #0d0d0d; --fg: #e0e0e0; --accent: #00c853; --code-bg: #1a1a1a; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: var(--bg); color: var(--fg); line-height: 1.6;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .container { max-width: 780px; width: 100%; padding: 3rem 1.5rem; }
+
+  h1 { font-size: 2.5rem; font-weight: 700; letter-spacing: -0.03em; }
+  h1 span { color: var(--accent); }
+  h2 { font-size: 1.3rem; margin: 2.5rem 0 1rem; font-weight: 600; }
+  p  { margin: 0.8rem 0; }
+  a  { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .tagline { font-size: 1.1rem; color: #999; margin: 0.5rem 0 1.5rem; }
+
+  pre {
+    background: var(--code-bg); border-radius: 8px; padding: 1rem 1.2rem;
+    overflow-x: auto; font-size: 0.9rem; margin: 0.8rem 0;
+  }
+  code { font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace; }
+  pre .prompt { color: var(--accent); }
+  pre .comment { color: #666; font-style: italic; }
+
+  .features { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.5rem 0; }
+  .feature {
+    background: var(--code-bg); border-radius: 8px; padding: 1rem 1.2rem;
+    border-left: 3px solid var(--accent);
+  }
+  .feature h3 { font-size: 1rem; margin-bottom: 0.3rem; }
+  .feature p  { font-size: 0.9rem; color: #999; margin: 0; }
+
+  .badge {
+    display: inline-block; background: var(--code-bg); border-radius: 6px;
+    padding: 0.2rem 0.6rem; font-size: 0.8rem; color: #888;
+    border: 1px solid #222; margin-right: 0.3rem;
+  }
+
+  footer { margin-top: 3rem; font-size: 0.85rem; color: #555; text-align: center; }
+
+  @media (max-width: 600px) {
+    .features { grid-template-columns: 1fr; }
+    .container { padding: 2rem 1rem; }
+    h1 { font-size: 1.8rem; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>threads<span>.</span>cleaner</h1>
+<p class="tagline">Bulk-delete your Threads posts and replies.<br>Free, open-source, runs on your machine.</p>
+
+<p>
+  <span class="badge">Python 3.11+</span>
+  <span class="badge">MIT License</span>
+  <a href="https://github.com/vincentmathis/threads-cleaner/releases">Download</a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/vincentmathis/threads-cleaner">GitHub</a>
+</p>
+
+<h2>Quick start</h2>
+<pre><code><span class="prompt">$</span> <span class="comment"># Download the exe from GitHub Releases, then:</span>
+<span class="prompt">$</span> threads-cleaner install-browser
+<span class="prompt">$</span> threads-cleaner login
+<span class="prompt">$</span> threads-cleaner --target both --yes</code></pre>
+
+<h2>No API, no accounts, no rate limits</h2>
+<p>
+  Threads has no public bulk-delete API. Most tools either don't work or
+  require a Meta developer account that can be suspended at any time.
+</p>
+<p>
+  <strong>threads-cleaner</strong> uses browser automation (Playwright) to
+  click the real Threads UI — the same buttons you'd click manually.
+</p>
+
+<h2>Features</h2>
+<div class="features">
+  <div class="feature">
+    <h3>Bulk delete</h3>
+    <p>Delete all your posts, all your replies, or both. Set a max limit or let it run.</p>
+  </div>
+  <div class="feature">
+    <h3>Date filters</h3>
+    <p><code>--older-than 30d</code> or <code>--newer-than 7d</code>. Also accepts ISO dates.</p>
+  </div>
+  <div class="feature">
+    <h3>Dry run mode</h3>
+    <p><code>--dry-run</code> opens the browser and shows what would be deleted — no destructive clicks.</p>
+  </div>
+  <div class="feature">
+    <h3>Standalone EXE</h3>
+    <p>Download the single-file executable. No Python, no pip, no dependencies to install.</p>
+  </div>
+</div>
+
+<h2>How it works</h2>
+<p>
+  The tool opens a phone-sized Chromium window, loads your session cookies,
+  navigates to your profile and replies tab, and clicks each item's "More" menu
+  → "Delete" → confirm. Items are marked so nothing is tried twice. The page
+  scrolls automatically to find everything.
+</p>
+
+<h2>Download</h2>
+<p>
+  Get the latest <code>threads-cleaner.exe</code> (Windows, ~70MB self-contained)
+  or the pip wheel from the
+  <a href="https://github.com/vincentmathis/threads-cleaner/releases">GitHub Releases</a>
+  page.
+</p>
+
+<h2>Install via pip</h2>
+<pre><code><span class="prompt">$</span> pip install threads-cleaner
+<span class="prompt">$</span> threads-cleaner install-browser
+<span class="prompt">$</span> threads-cleaner login
+<span class="prompt">$</span> threads-cleaner --target both</code></pre>
+
+<footer>
+  MIT License &nbsp;·&nbsp; <a href="https://github.com/vincentmathis/threads-cleaner">vincentmathis/threads-cleaner</a>
+</footer>
+
+</div>
+</body>
+</html>

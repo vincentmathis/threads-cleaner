@@ -12,34 +12,47 @@ console = Console()
 
 
 class BrowserDeleter:
-    def __init__(self, session: dict, *, headed: bool = False, older_than: str | None = None):
+    def __init__(self, session: dict, *, headed: bool = False,
+                 older_than: str | None = None, newer_than: str | None = None):
         self.session = session
         self._headed = headed
         self._browser = None
         self._context = None
         self._page = None
         self._pw = None
-        self._older_than = self._parse_older_than(older_than) if older_than else None
+        self._older_than = self._parse_date_filter(older_than) if older_than else None
+        self._newer_than = self._parse_date_filter(newer_than) if newer_than else None
 
     @staticmethod
-    def _parse_older_than(value: str) -> str:
-        match = re.match(r'^(\d+)([hdwmy])$', value.lower().strip())
-        if not match:
-            raise ValueError(f"Invalid --older-than format: '{value}'. Use e.g. 30d, 7d, 24h, 2w, 1m")
-        num = int(match.group(1))
-        unit = match.group(2)
-        now = datetime.now(timezone.utc)
-        if unit == 'h':
-            threshold = now - timedelta(hours=num)
-        elif unit == 'd':
-            threshold = now - timedelta(days=num)
-        elif unit == 'w':
-            threshold = now - timedelta(weeks=num)
-        elif unit == 'm':
-            threshold = now - timedelta(days=num * 30)
-        elif unit == 'y':
-            threshold = now - timedelta(days=num * 365)
-        return threshold.isoformat()
+    def _parse_date_filter(value: str) -> str:
+        """Parse a duration (30d, 7d, 24h) or ISO date into an ISO datetime string."""
+        value = value.strip()
+        match = re.match(r'^(\d+)([hdwmy])$', value.lower())
+        if match:
+            num = int(match.group(1))
+            unit = match.group(2)
+            now = datetime.now(timezone.utc)
+            if unit == 'h':
+                threshold = now - timedelta(hours=num)
+            elif unit == 'd':
+                threshold = now - timedelta(days=num)
+            elif unit == 'w':
+                threshold = now - timedelta(weeks=num)
+            elif unit == 'm':
+                threshold = now - timedelta(days=num * 30)
+            elif unit == 'y':
+                threshold = now - timedelta(days=num * 365)
+            return threshold.isoformat()
+        try:
+            dt = datetime.fromisoformat(value)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.isoformat()
+        except ValueError:
+            raise ValueError(
+                f"Invalid date format: '{value}'. "
+                "Use e.g. 30d, 7d, 24h, 2w, 1m, 1y, or an ISO date like 2026-06-01"
+            )
 
     def _cookies_for_playwright(self) -> list[dict]:
         cookies = []
@@ -168,8 +181,11 @@ class BrowserDeleter:
         Finds a container that has BOTH a user link AND a timestamp AND a
         svg[aria-label="More"] — that container is the post wrapper, and the More
         button inside it is the correct three-dot menu."""
-        candidate = self._page.evaluate(r"""
-            ({username, olderThan}) => {
+    def _delete_item_on_thread(self, username: str) -> str | None:
+        """Find and delete the current user's More-button item on the current page.
+        Returns the post's datetime string on success, None otherwise."""
+        result = self._page.evaluate(r"""
+            ({username, olderThan, newerThan}) => {
                 const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                 const userPattern = new RegExp('/@' + escaped + '(/|$|\\?|#)');
 
@@ -221,36 +237,42 @@ class BrowserDeleter:
                 }
                 if (!bestTarget) return false;
 
-                if (olderThan && bestTime) {
-                    const pd = new Date(bestTime.getAttribute('datetime'));
-                    if (!isNaN(pd.getTime()) && pd > new Date(olderThan)) return false;
+                const dt = bestTime ? bestTime.getAttribute('datetime') : null;
+                if (dt) {
+                    const pd = new Date(dt);
+                    if (!isNaN(pd.getTime())) {
+                        if (olderThan && pd > new Date(olderThan)) return null;
+                        if (newerThan && pd < new Date(newerThan)) return null;
+                    }
                 }
                 bestTarget.setAttribute('data-oc-item', '1');
                 bestSvg.setAttribute('data-oc-processed', '1');
-                return true;
+                return dt || true;
             }
-        """, {"username": username, "olderThan": self._older_than})
+        """, {"username": username, "olderThan": self._older_than, "newerThan": self._newer_than})
 
-        if not candidate:
-            return False
+        if not result:
+            return None
         try:
             self._page.locator('[data-oc-item="1"]').first.click(timeout=5000)
             self._page.evaluate("document.querySelectorAll('[data-oc-item]').forEach(e => e.removeAttribute('data-oc-item'))"
 )
         except Exception:
-            return False
+            return None
         time.sleep(1.5)
         if not self._click_menu_delete():
             self._page.keyboard.press("Escape")
             time.sleep(0.5)
-            return False
+            return None
         time.sleep(1.2)
         if not self._click_confirm_delete():
-            return False
+            return None
         time.sleep(2)
         had_error = self._has_error_toast()
         self._dismiss_toasts()
-        return not had_error
+        if had_error:
+            return None
+        return result if isinstance(result, str) else None
 
     def _collect_post_urls(self, username: str) -> list[str]:
         urls = self._page.evaluate(r"""
@@ -333,9 +355,10 @@ class BrowserDeleter:
                     console.print("[red]Session expired.[/]")
                     return deleted
 
-                if self._delete_item_on_thread(username):
+                dt = self._delete_item_on_thread(username)
+                if dt:
                     deleted += 1
-                    console.print(f"[green]OK[/] deleted post {deleted}")
+                    console.print(f"[green]OK[/] deleted post {deleted}  ({dt})")
                 else:
                     console.print(f"[yellow]  could not delete post on this page[/]")
 
@@ -371,10 +394,10 @@ class BrowserDeleter:
                 console.print(f"[dim]  hit limit of {max_deletes} replies[/]")
                 break
 
-            if self._delete_item_on_thread(username):
+            dt = self._delete_item_on_thread(username)
+            if dt:
                 deleted += 1
-                console.print(f"[green]OK[/] deleted reply {deleted}")
-                # Stay on the same page — reply was removed from DOM
+                console.print(f"[green]OK[/] deleted reply {deleted}  ({dt})")
                 time.sleep(2)
                 continue
 
@@ -389,12 +412,18 @@ class BrowserDeleter:
         return deleted
 
 
-def run_browser_delete(*, target="posts", max_deletes=None, dry_run=False, yes=False, headed=False, older_than=None):
+def run_browser_delete(*, target="posts", max_deletes=None, dry_run=False, yes=False, headed=False,
+                       older_than=None, newer_than=None):
     session = config.load_session()
     if not session:
         raise RuntimeError("Not logged in. Run:  threads-cleaner browser-login")
     label = f" (max {max_deletes})" if max_deletes else ""
-    filter_label = f", older than {older_than}" if older_than else ""
+    filters = []
+    if older_than:
+        filters.append(f"older than {older_than}")
+    if newer_than:
+        filters.append(f"newer than {newer_than}")
+    filter_label = f", {', '.join(filters)}" if filters else ""
     mode = "DRY RUN (no deletes)" if dry_run else "LIVE"
     console.print("[bold]Threads Cleaner - Browser Delete[/bold]\n"
                   f"  Mode: {mode}\n"
@@ -405,7 +434,7 @@ def run_browser_delete(*, target="posts", max_deletes=None, dry_run=False, yes=F
     if dry_run:
         console.print("[blue]Dry run — nothing was deleted.[/]")
         return
-    deleter = BrowserDeleter(session=session, headed=headed, older_than=older_than)
+    deleter = BrowserDeleter(session=session, headed=headed, older_than=older_than, newer_than=newer_than)
     try:
         deleter.start()
         total = 0

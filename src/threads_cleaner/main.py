@@ -40,7 +40,10 @@ def browser_delete(
         False, "--headed", help="Show the browser window (for debugging)."
     ),
     older_than: Optional[str] = typer.Option(
-        None, "--older-than", help="Only delete items older than this (e.g. 30d, 7d, 24h, 2w, 1m)."
+        None, "--older-than", help="Only delete items older than this (e.g. 30d, 7d, 24h, 2w, 1m, or ISO date)."
+    ),
+    newer_than: Optional[str] = typer.Option(
+        None, "--newer-than", help="Only delete items newer than this (e.g. 7d, 24h, or ISO date like 2026-06-01)."
     ),
 ):
     """Delete posts, replies, or both via a real browser (Playwright). Clicks the UI like a human."""
@@ -55,6 +58,7 @@ def browser_delete(
             yes=yes,
             headed=headed,
             older_than=older_than,
+            newer_than=newer_than,
         )
     except Exception as e:
         console.print(f"[red]Error:[/] {e}")

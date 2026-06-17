@@ -464,6 +464,13 @@ def run_browser_delete(*, target="posts", max_deletes=None, dry_run=False, yes=F
 
 
 def run_browser_login() -> dict:
+    import os
+    # Same PLAYWRIGHT_BROWSERS_PATH fix as BrowserDeleter.start()
+    pw_browsers = os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or os.path.join(
+        os.environ.get("USERPROFILE", ""), "AppData", "Local", "ms-playwright"
+    )
+    if os.path.isdir(pw_browsers):
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = pw_browsers
     from playwright.sync_api import sync_playwright, TimeoutError as PwTimeout
     console.print("[bold]Threads Cleaner - Browser Login[/bold]\n")
     try:

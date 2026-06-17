@@ -24,8 +24,8 @@ def browser_login():
 
 @app.command()
 def browser_delete(
-    include_replies: bool = typer.Option(
-        False, "--include-replies", help="Also delete replies from the Replies tab."
+    target: str = typer.Option(
+        "posts", "--target", "-t", help="What to delete: posts, replies, or both."
     ),
     max_deletes: Optional[int] = typer.Option(
         None, "--max", "-m", help="Stop after deleting this many items (0 = unlimited)."
@@ -43,10 +43,13 @@ def browser_delete(
         None, "--older-than", help="Only delete items older than this (e.g. 30d, 7d, 24h, 2w, 1m)."
     ),
 ):
-    """Delete posts (and optionally replies) via a real browser (Playwright). Clicks the UI like a human."""
+    """Delete posts, replies, or both via a real browser (Playwright). Clicks the UI like a human."""
+    if target not in ("posts", "replies", "both"):
+        console.print("[red]--target must be 'posts', 'replies', or 'both'[/]")
+        raise typer.Exit(1)
     try:
         run_browser_delete(
-            include_replies=include_replies,
+            target=target,
             max_deletes=max_deletes,
             dry_run=dry_run,
             yes=yes,

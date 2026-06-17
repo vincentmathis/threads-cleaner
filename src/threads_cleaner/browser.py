@@ -290,51 +290,56 @@ class BrowserDeleter:
             raise RuntimeError("Session expired or invalid")
         self._dismiss_popups()
 
-        # Scroll the profile page to load more post links
-        console.print("[dim]  scrolling profile to load posts...[/]")
-        for s in range(6):
-            self._scroll_page(3)
-            time.sleep(2)
-            try:
-                btn = self._page.locator('button:has-text("Show more"), button:has-text("Load more")').first
-                if btn.is_visible(timeout=500):
-                    btn.click(timeout=1000)
-                    time.sleep(2)
-            except: pass
-        time.sleep(2)
-
-        # Collect post URLs from the profile page
-        post_urls = self._collect_post_urls(username)
-        console.print(f"[dim]  found {len(post_urls)} post URLs[/]")
-
         deleted = 0
-        for idx, post_url in enumerate(post_urls):
+        seen = set()
+        scroll_stalls = 0
+
+        while True:
             if max_deletes and deleted >= max_deletes:
                 console.print(f"[dim]  hit limit of {max_deletes} posts[/]")
                 break
 
-            console.print(f"[dim]  ({idx+1}/{len(post_urls)}) opening post...[/]")
-            try:
-                self._page.goto(post_url, wait_until="domcontentloaded", timeout=30000)
-            except: pass
-            time.sleep(3)
-            self._dismiss_popups()
-            if "login" in self._page.url.lower():
-                console.print("[red]Session expired.[/]")
-                break
+            # Collect post URLs currently on the page
+            urls = self._collect_post_urls(username)
+            new = [u for u in urls if u not in seen]
+            seen.update(new)
 
+            if not new:
+                if scroll_stalls >= 10:
+                    break
+                scroll_stalls += 1
+                console.print(f"[dim]  scrolling for more posts... ({scroll_stalls}/10)[/]")
+                self._scroll_page(3)
+                time.sleep(2)
+                continue
 
-            if self._delete_item_on_thread(username):
-                deleted += 1
-                console.print(f"[green]OK[/] deleted post {deleted}")
-            else:
-                console.print(f"[yellow]  could not delete post on this page[/]")
+            scroll_stalls = 0
 
-            # Go back to profile page for next iteration
-            try:
-                self._page.goto(profile_url, wait_until="domcontentloaded", timeout=30000)
-            except: pass
-            time.sleep(2)
+            for post_url in new:
+                if max_deletes and deleted >= max_deletes:
+                    break
+
+                console.print(f"[dim]  opening post...[/]")
+                try:
+                    self._page.goto(post_url, wait_until="domcontentloaded", timeout=30000)
+                except: pass
+                time.sleep(3)
+                self._dismiss_popups()
+                if "login" in self._page.url.lower():
+                    console.print("[red]Session expired.[/]")
+                    return deleted
+
+                if self._delete_item_on_thread(username):
+                    deleted += 1
+                    console.print(f"[green]OK[/] deleted post {deleted}")
+                else:
+                    console.print(f"[yellow]  could not delete post on this page[/]")
+
+                # Go back to profile page
+                try:
+                    self._page.goto(profile_url, wait_until="domcontentloaded", timeout=30000)
+                except: pass
+                time.sleep(2)
 
         return deleted
 
@@ -353,88 +358,109 @@ class BrowserDeleter:
             raise RuntimeError("Session expired or invalid")
         self._dismiss_popups()
 
-        # Scroll the replies page to load more thread entries
-        console.print("[dim]  scrolling replies page to load threads...[/]")
-        for s in range(6):
-            for _ in range(3):
-                self._page.evaluate("window.scrollBy(0, 2000)")
-                time.sleep(0.3)
-            time.sleep(2)
-            # Check for load more buttons
-            try:
-                btn = self._page.locator('button:has-text("Show more"), button:has-text("Load more"), button:has-text("View more")').first
-                if btn.is_visible(timeout=500):
-                    btn.click(timeout=1000)
-                    time.sleep(2)
-            except: pass
-        time.sleep(2)
-
-        # Collect thread URLs from the replies page
-        thread_urls = self._page.evaluate(r"""
-            () => {
-                const urls = new Set();
-                const base = window.location.origin;
-                for (const a of document.querySelectorAll('a[href]')) {
-                    let h = a.getAttribute('href');
-                    if (!h) continue;
-                    if (h.startsWith('//')) h = 'https:' + h;
-                    else if (h.startsWith('/')) h = base + h;
-                    else if (!h.startsWith('http')) continue;
-                    try { var u = new URL(h); } catch(e) { continue; }
-                    if (!/threads\.(com|net)$/i.test(u.hostname)) continue;
-                    const p = u.pathname.replace(/\/+$/, '');
-                    if (!/^\/@\w+\/post\/\w+$/.test(p)) continue;
-                    urls.add(u.href);
-                }
-                return Array.from(urls);
-            }
-        """)
-        console.print(f"[dim]  found {len(thread_urls)} threads with replies[/]")
-
         deleted = 0
-        for idx, thread_url in enumerate(thread_urls):
+        seen = set()
+        scroll_stalls = 0
+
+        while True:
             if max_deletes and deleted >= max_deletes:
                 console.print(f"[dim]  hit limit of {max_deletes} replies[/]")
                 break
 
-            console.print(f"[dim]  ({idx+1}/{len(thread_urls)}) opening thread...[/]")
-            try:
-                self._page.goto(thread_url, wait_until="domcontentloaded", timeout=30000)
-            except:
-                pass
-            time.sleep(3)
-            self._dismiss_popups()
-            if "login" in self._page.url.lower():
-                console.print("[red]Session expired.[/]")
-                break
+            # Collect thread URLs from the replies page
+            thread_urls = self._page.evaluate(r"""
+                () => {
+                    const urls = new Set();
+                    const base = window.location.origin;
+                    for (const a of document.querySelectorAll('a[href]')) {
+                        let h = a.getAttribute('href');
+                        if (!h) continue;
+                        if (h.startsWith('//')) h = 'https:' + h;
+                        else if (h.startsWith('/')) h = base + h;
+                        else if (!h.startsWith('http')) continue;
+                        try { var u = new URL(h); } catch(e) { continue; }
+                        if (!/threads\.(com|net)$/i.test(u.hostname)) continue;
+                        const p = u.pathname.replace(/\/+$/, '');
+                        if (!/^\/@\w+\/post\/\w+$/.test(p)) continue;
+                        urls.add(u.href);
+                    }
+                    return Array.from(urls);
+                }
+            """)
+            new = [u for u in thread_urls if u not in seen]
+            seen.update(new)
 
-            if self._delete_item_on_thread(username):
-                deleted += 1
-                console.print(f"[green]OK[/] deleted reply {deleted}")
-            else:
-                console.print(f"[yellow]  no reply found on this thread[/]")
+            if not new:
+                if scroll_stalls >= 10:
+                    break
+                scroll_stalls += 1
+                console.print(f"[dim]  scrolling for more threads... ({scroll_stalls}/10)[/]")
+                self._scroll_page(3)
+                time.sleep(2)
+                # Click "Show more" / "Load more" if present
+                try:
+                    btn = self._page.locator(
+                        'button:has-text("Show more"), button:has-text("Load more"), button:has-text("View more")'
+                    ).first
+                    if btn.is_visible(timeout=500):
+                        btn.click(timeout=1000)
+                        time.sleep(2)
+                except: pass
+                continue
 
-            # Go back to replies page
-            try:
-                self._page.goto(replies_url, wait_until="domcontentloaded", timeout=30000)
-            except:
-                pass
-            time.sleep(2)
+            scroll_stalls = 0
+
+            for thread_url in new:
+                if max_deletes and deleted >= max_deletes:
+                    break
+
+                console.print(f"[dim]  opening thread...[/]")
+                try:
+                    self._page.goto(thread_url, wait_until="domcontentloaded", timeout=30000)
+                except:
+                    pass
+                time.sleep(3)
+                self._dismiss_popups()
+                if "login" in self._page.url.lower():
+                    console.print("[red]Session expired.[/]")
+                    return deleted
+
+                # Try to find the reply — it may be buried, scroll within the thread
+                found = self._delete_item_on_thread(username)
+                if not found:
+                    for _ in range(5):
+                        self._scroll_page(2)
+                        time.sleep(1)
+                        if self._delete_item_on_thread(username):
+                            found = True
+                            break
+
+                if found:
+                    deleted += 1
+                    console.print(f"[green]OK[/] deleted reply {deleted}")
+                else:
+                    console.print(f"[yellow]  no reply found on this thread[/]")
+
+                # Go back to replies page
+                try:
+                    self._page.goto(replies_url, wait_until="domcontentloaded", timeout=30000)
+                except:
+                    pass
+                time.sleep(2)
 
         return deleted
 
 
-def run_browser_delete(*, include_replies=False, max_deletes=None, dry_run=False, yes=False, headed=False, older_than=None):
+def run_browser_delete(*, target="posts", max_deletes=None, dry_run=False, yes=False, headed=False, older_than=None):
     session = config.load_session()
     if not session:
         raise RuntimeError("Not logged in. Run:  threads-cleaner browser-login")
-    targets = "replies" if include_replies else "posts"
     label = f" (max {max_deletes})" if max_deletes else ""
     filter_label = f", older than {older_than}" if older_than else ""
     mode = "DRY RUN (no deletes)" if dry_run else "LIVE"
     console.print("[bold]Threads Cleaner - Browser Delete[/bold]\n"
                   f"  Mode: {mode}\n"
-                  f"  Targets: {targets}{label}{filter_label}\n")
+                  f"  Targets: {target}{label}{filter_label}\n")
     if not dry_run and not yes:
         result = console.input("[yellow]This will delete items. Continue? [y/N] [/]")
         if result.lower() != "y": return
@@ -445,10 +471,14 @@ def run_browser_delete(*, include_replies=False, max_deletes=None, dry_run=False
     try:
         deleter.start()
         total = 0
-        if include_replies:
-            total += deleter.delete_replies(max_deletes or 0)
-        else:
-            total += deleter.delete_posts(max_deletes or 0)
+        remaining = max_deletes or 0
+        if target in ("both", "replies"):
+            n = deleter.delete_replies(remaining)
+            total += n
+            remaining = (remaining - n) if remaining else 0
+        if target in ("both", "posts"):
+            n = deleter.delete_posts(remaining)
+            total += n
         console.print(f"\n[bold green]Done.[/] Deleted {total} item(s).")
     finally:
         deleter.stop()

@@ -39,8 +39,8 @@ threads-cleaner browser-delete --headed --max 5
 |---------|-------------|
 | `install-browser` | Download the Chromium browser required by Playwright |
 | `browser-login` | Opens a headed browser — log into Threads, session saved automatically |
-| `browser-delete` | Deletes posts by clicking the Threads mobile web UI |
-| `--include-replies` | Also delete your replies |
+| `browser-delete` | Deletes posts, replies, or both via the Threads mobile web UI |
+| `--target`, `-t` | What to delete: `posts` (default), `replies`, or `both` |
 | `--max N`, `-m N` | Stop after N deletions (0 = unlimited) |
 | `--dry-run` | Open browser, navigate to profile, no destructive clicks |
 | `--headed` | Show the browser window (for debugging) |
@@ -53,13 +53,13 @@ threads-cleaner browser-delete --headed --max 5
 threads-cleaner browser-delete --headed --max 10
 
 # Delete everything including replies, no prompts
-threads-cleaner browser-delete --include-replies --yes
+threads-cleaner browser-delete --target both --yes
 
 # Preview what the tool would do
 threads-cleaner browser-delete --dry-run --headed
 
 # Delete 50 replies only
-threads-cleaner browser-delete --include-replies --max 50
+threads-cleaner browser-delete --target replies --max 50
 ```
 
 ## How it works
@@ -73,7 +73,7 @@ threads-cleaner browser-delete --include-replies --max 50
    - Clicks **Delete** in the confirmation dialog (or detects auto-deletion if no dialog appears)
    - Marks each item as "tried" immediately to prevent loops
 
-3. With `--include-replies`, it also navigates to `@{username}/replies/` and repeats.
+3. With `--target replies` or `--target both`, it also navigates to `@{username}/replies/` and repeats.
 
 Each UI interaction takes ~4-5 seconds. The tool scrolls automatically and can delete hundreds of items per session.
 

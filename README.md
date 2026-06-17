@@ -16,7 +16,7 @@ pipx install threads-cleaner
 uv tool install threads-cleaner
 ```
 
-You can also download a packaged .exe directly from [here](https://github.com/vincentmathis/threads-cleaner/releases/download/v1.0.0/threads-cleaner.exe)
+You can also download a packaged .exe directly from [GitHub Releases](https://github.com/vincentmathis/threads-cleaner/releases)
 
 Then install the Chromium browser:
 

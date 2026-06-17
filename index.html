@@ -47,6 +47,24 @@
 
   footer { margin-top: 3rem; font-size: 0.85rem; color: #555; text-align: center; }
 
+  .install-tabs { margin: 1.5rem 0; }
+  .install-tabs input { display: none; }
+  .install-tabs label {
+    display: inline-block; padding: 0.4rem 1rem; margin-right: 0.3rem;
+    cursor: pointer; border-radius: 6px 6px 0 0;
+    font-size: 0.85rem; font-weight: 500;
+    background: #1a1a1a; color: #666; border: 1px solid #222; border-bottom: none;
+  }
+  .install-tabs input:checked + label {
+    background: var(--code-bg); color: var(--fg); border-color: #333;
+    position: relative; top: 1px;
+  }
+  .tab-content { display: none; }
+  #tab-exe:checked ~ #content-exe,
+  #tab-pipx:checked ~ #content-pipx,
+  #tab-uv:checked ~ #content-uv { display: block; }
+  .install-tabs pre { margin-top: 0; border-radius: 0 8px 8px 8px; }
+
   @media (max-width: 600px) {
     .features { grid-template-columns: 1fr; }
     .container { padding: 2rem 1rem; }
@@ -69,10 +87,32 @@
 </p>
 
 <h2>Quick start</h2>
-<pre><code><span class="prompt">$</span> <span class="comment"># Download the exe from GitHub Releases, then:</span>
+<div class="install-tabs">
+  <input type="radio" name="tabs" id="tab-exe" checked>
+  <label for="tab-exe">EXE</label>
+  <input type="radio" name="tabs" id="tab-pipx">
+  <label for="tab-pipx">pipx</label>
+  <input type="radio" name="tabs" id="tab-uv">
+  <label for="tab-uv">uv tool</label>
+  <div class="tab-content" id="content-exe">
+<pre><code><span class="comment"># Download threads-cleaner.exe from GitHub Releases</span>
+<span class="prompt">$</span> .\threads-cleaner install-browser
+<span class="prompt">$</span> .\threads-cleaner login
+<span class="prompt">$</span> .\threads-cleaner --target both --yes</code></pre>
+  </div>
+  <div class="tab-content" id="content-pipx">
+<pre><code><span class="prompt">$</span> pipx install threads-cleaner
 <span class="prompt">$</span> threads-cleaner install-browser
 <span class="prompt">$</span> threads-cleaner login
 <span class="prompt">$</span> threads-cleaner --target both --yes</code></pre>
+  </div>
+  <div class="tab-content" id="content-uv">
+<pre><code><span class="prompt">$</span> uv tool install threads-cleaner
+<span class="prompt">$</span> threads-cleaner install-browser
+<span class="prompt">$</span> threads-cleaner login
+<span class="prompt">$</span> threads-cleaner --target both --yes</code></pre>
+  </div>
+</div>
 
 <h2>No API, no accounts, no rate limits</h2>
 <p>
@@ -114,17 +154,17 @@
 
 <h2>Download</h2>
 <p>
-  Get the latest <code>threads-cleaner.exe</code> (Windows, ~70MB self-contained)
-  or the pip wheel from the
-  <a href="https://github.com/vincentmathis/threads-cleaner/releases">GitHub Releases</a>
-  page.
+  <strong>EXE (Windows):</strong> Download
+  <a href="https://github.com/vincentmathis/threads-cleaner/releases">threads-cleaner.exe</a>
+  from GitHub Releases. ~70MB, self-contained, no Python needed.
 </p>
-
-<h2>Install via pip</h2>
-<pre><code><span class="prompt">$</span> pip install threads-cleaner
-<span class="prompt">$</span> threads-cleaner install-browser
-<span class="prompt">$</span> threads-cleaner login
-<span class="prompt">$</span> threads-cleaner --target both</code></pre>
+<p>
+  <strong>PyPI (cross-platform):</strong> Install via
+  <code>pipx</code>, <code>uv tool</code>, or <code>pip</code> on any OS:
+</p>
+<pre><code><span class="prompt">$</span> pipx install threads-cleaner
+<span class="prompt">$</span> <span class="comment"># or:  uv tool install threads-cleaner</span>
+<span class="prompt">$</span> <span class="comment"># or:  pip install threads-cleaner</span></code></pre>
 
 <footer>
   MIT License &nbsp;·&nbsp; <a href="https://github.com/vincentmathis/threads-cleaner">vincentmathis/threads-cleaner</a>

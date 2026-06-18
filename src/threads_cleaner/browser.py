@@ -130,11 +130,17 @@ class BrowserDeleter:
 
     def _click_menu_delete(self) -> bool:
         try:
-            item = self._page.locator('[role="menuitem"]').filter(
-                has_text=re.compile(r"Delete", re.IGNORECASE)
-            ).first
-            item.wait_for(state="attached", timeout=6000)
-            item.click(timeout=5000, force=True)
+            items = self._page.locator('[role="menuitem"]')
+            items.first.wait_for(state="attached", timeout=6000)
+            # Try locale text match, fallback to last item
+            for text in ["Delete", "Löschen", "Eliminar", "Supprimer", "Elimina"]:
+                try:
+                    item = items.filter(has_text=re.compile(text, re.IGNORECASE)).first
+                    if item.is_visible(timeout=500):
+                        item.click(timeout=5000, force=True)
+                        return True
+                except: pass
+            items.nth(items.count() - 1).click(timeout=5000, force=True)
             return True
         except Exception:
             return False
@@ -144,11 +150,17 @@ class BrowserDeleter:
             time.sleep(0.5)
             dialog = self._page.locator('[role="dialog"]').first
             dialog.wait_for(state="visible", timeout=10000)
-            item = dialog.locator('[role="button"]').filter(
-                has_text=re.compile(r"Delete", re.IGNORECASE)
-            ).first
-            item.wait_for(state="attached", timeout=3000)
-            item.click(timeout=5000, force=True)
+            btns = dialog.locator('[role="button"]')
+            # Try locale text match, fallback to last button
+            for text in ["Delete", "Löschen", "Eliminar", "Supprimer", "Elimina"]:
+                try:
+                    btn = btns.filter(has_text=re.compile(text, re.IGNORECASE)).first
+                    if btn.is_visible(timeout=500):
+                        btn.click(timeout=5000, force=True)
+                        return True
+                except: pass
+            btns.first.wait_for(state="attached", timeout=3000)
+            btns.nth(btns.count() - 1).click(timeout=5000, force=True)
             return True
         except Exception:
             return False
@@ -165,10 +177,11 @@ class BrowserDeleter:
     def _has_error_toast(self) -> bool:
         return self._page.evaluate("""
             (() => {
-                const all = document.querySelectorAll('span, div, [role="alert"]');
-                for (const el of all) {
+                const alerts = document.querySelectorAll('[role="alert"]');
+                for (const el of alerts) {
+                    if (!el.offsetParent && el.hidden) continue;
                     const txt = (el.innerText || el.textContent || '').toLowerCase();
-                    if (txt.includes('something went wrong') || txt.includes('try again')) {
+                    if (txt.includes('error') || txt.includes('wrong') || txt.includes('try again') || txt.includes('schief') || txt.includes('fehler')) {
                         return true;
                     }
                 }
@@ -184,28 +197,29 @@ class BrowserDeleter:
                 const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                 const userPattern = new RegExp('/@' + escaped + '(/|$|\\?|#)');
 
-                // 1. Collect all svg[aria-label="More"] with positions
+                // 1. Collect More-button SVGs by locale-aware aria-labels
                 const moreSvgs = [];
-                for (const svg of document.querySelectorAll('svg[aria-label="More"]')) {
-                    if (svg.hasAttribute('data-oc-processed')) continue;
-                    const r = svg.getBoundingClientRect();
-                    if (r.width < 5 || r.height < 5) continue;
-                    // Walk up to clickable parent
-                    let target = svg.parentElement;
-                    for (let up = 0; up < 5; up++) {
-                        if (!target) break;
-                        if (target.tagName === 'BUTTON' || target.getAttribute('role') === 'button') break;
-                        target = target.parentElement;
+                const ariaLabels = ['More', 'Mehr', 'M\u00e1s', 'Plus', 'Altro', 'Mais'];
+                for (const label of ariaLabels) {
+                    for (const svg of document.querySelectorAll('svg[aria-label="' + label + '"]')) {
+                        if (svg.hasAttribute('data-oc-processed')) continue;
+                        const r = svg.getBoundingClientRect();
+                        if (r.width < 5 || r.height < 5) continue;
+                        // Walk up to clickable parent
+                        let target = svg.parentElement;
+                        for (let up = 0; up < 5; up++) {
+                            if (!target) break;
+                            if (target.tagName === 'BUTTON' || target.getAttribute('role') === 'button') break;
+                            target = target.parentElement;
+                        }
+                        if (!target) continue;
+                        moreSvgs.push({svg, target, y: r.y});
                     }
-                    if (!target) continue;
-                    moreSvgs.push({svg, target, y: r.y});
+                    if (moreSvgs.length) break;
                 }
                 if (!moreSvgs.length) return false;
 
-                // 2. For each More SVG, find the closest parent container that has BOTH
-                //    a user link AND a timestamp (post container). Pick the SVG with
-                //    the smallest depth (tightest container) — avoids nav/sidebar SVGs
-                //    that match at a higher page level.
+                // 2. Find the closest parent container with user link + timestamp
                 let bestTarget = null;
                 let bestSvg = null;
                 let bestDepth = 999;
@@ -225,7 +239,7 @@ class BrowserDeleter:
                                 bestSvg = svg;
                                 bestTime = hasTime;
                             }
-                            break; // don't go higher for this SVG
+                            break;
                         }
                         container = container.parentElement;
                     }
@@ -247,6 +261,16 @@ class BrowserDeleter:
         """, {"username": username, "olderThan": self._older_than, "newerThan": self._newer_than})
 
         if not result:
+            svg_info = self._page.evaluate("""
+                (() => {
+                    const labels = ['More', 'Mehr', 'M\u00e1s', 'Plus', 'Altro', 'Mais'];
+                    const found = labels.flatMap(l =>
+                        Array.from(document.querySelectorAll('svg[aria-label="'+l+'"]'))
+                    ).filter(svg => svg.getBoundingClientRect().width >= 5);
+                    return {svgCount: found.length, processed: found.filter(s => s.hasAttribute('data-oc-processed')).length};
+                })()
+            """)
+            console.print(f"[dim]  {svg_info['svgCount']} SVGs, {svg_info['processed']} already processed[/]")
             return None
         try:
             self._page.locator('[data-oc-item="1"]').first.click(timeout=5000)
@@ -269,28 +293,20 @@ class BrowserDeleter:
             return None
         return result if isinstance(result, str) else None
 
-    def _collect_post_urls(self, username: str) -> list[str]:
-        urls = self._page.evaluate(r"""
-            (username) => {
-                const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const pattern = new RegExp('^/@' + escaped + '/post/\\w+$');
-                const base = window.location.origin;
-                const result = new Set();
-                for (const a of document.querySelectorAll('a[href]')) {
-                    let h = a.getAttribute('href');
-                    if (!h) continue;
-                    if (h.startsWith('//')) h = 'https:' + h;
-                    else if (h.startsWith('/')) h = base + h;
-                    else if (!h.startsWith('http')) continue;
-                    try { var u = new URL(h); } catch(e) { continue; }
-                    if (!/threads\.(com|net)$/i.test(u.hostname)) continue;
-                    const p = u.pathname.replace(/\/+$/, '');
-                    if (pattern.test(p)) result.add(u.href);
+    def _has_other_svgs(self) -> bool:
+        return self._page.evaluate("""
+            (() => {
+                const labels = ['More', 'Mehr', 'M\u00e1s', 'Plus', 'Altro', 'Mais'];
+                for (const label of labels) {
+                    for (const svg of document.querySelectorAll('svg[aria-label="' + label + '"]')) {
+                        if (svg.hasAttribute('data-oc-processed')) continue;
+                        const r = svg.getBoundingClientRect();
+                        if (r.width >= 5 && r.height >= 5) return true;
+                    }
                 }
-                return Array.from(result);
-            }
-        """, username)
-        return urls
+                return false;
+            })()
+        """)
 
     def _scroll_page(self, times: int = 3):
         for _ in range(times):
@@ -312,56 +328,44 @@ class BrowserDeleter:
         self._dismiss_popups()
 
         deleted = 0
-        seen = set()
         scroll_stalls = 0
+        total_scrolls = 0
 
         while True:
             if max_deletes and deleted >= max_deletes:
                 console.print(f"[dim]  hit limit of {max_deletes} posts[/]")
                 break
 
-            # Collect post URLs currently on the page
-            urls = self._collect_post_urls(username)
-            new = [u for u in urls if u not in seen]
-            seen.update(new)
-
-            if not new:
-                if scroll_stalls >= 10:
-                    break
-                scroll_stalls += 1
-                console.print(f"[dim]  scrolling for more posts... ({scroll_stalls}/10)[/]")
-                self._scroll_page(3)
-                time.sleep(2)
+            dt = self._delete_item_on_thread(username)
+            if dt:
+                deleted += 1
+                scroll_stalls = 0
+                console.print(f"[green]OK[/] deleted post {deleted}  ({dt})")
+                self._page.evaluate("window.scrollBy(0, 400)")
+                time.sleep(1)
                 continue
 
-            scroll_stalls = 0
-
-            for post_url in new:
-                if max_deletes and deleted >= max_deletes:
-                    break
-
-                console.print(f"[dim]  opening post...[/]")
-                try:
-                    self._page.goto(post_url, wait_until="domcontentloaded", timeout=30000)
-                except: pass
-                time.sleep(3)
-                self._dismiss_popups()
-                if "login" in self._page.url.lower():
-                    console.print("[red]Session expired.[/]")
-                    return deleted
-
-                dt = self._delete_item_on_thread(username)
-                if dt:
-                    deleted += 1
-                    console.print(f"[green]OK[/] deleted post {deleted}  ({dt})")
-                else:
-                    console.print(f"[yellow]  could not delete post on this page[/]")
-
-                # Go back to profile page
-                try:
-                    self._page.goto(profile_url, wait_until="domcontentloaded", timeout=30000)
-                except: pass
-                time.sleep(2)
+            # No post found — if page still has SVGs (ghost posts) after scrolling, stop
+            if scroll_stalls >= 3 and self._has_other_svgs():
+                console.print(f"[dim]  remaining items are not yours — stopping[/]")
+                break
+            scroll_stalls += 1
+            if scroll_stalls >= 20:
+                console.print(f"[dim]  no more posts found after {total_scrolls} scrolls[/]")
+                break
+            console.print(f"[dim]  scrolling for more posts... ({scroll_stalls}/20)[/]")
+            self._scroll_page(3)
+            total_scrolls += 1
+            time.sleep(2)
+            try:
+                btn = self._page.locator(
+                    'button:has-text("Show more"), button:has-text("Load more"),'
+                    ' button:has-text("View more")'
+                ).first
+                if btn.is_visible(timeout=500):
+                    btn.click(timeout=1000)
+                    time.sleep(2)
+            except: pass
 
         return deleted
 
@@ -401,7 +405,10 @@ class BrowserDeleter:
                 time.sleep(1)
                 continue
 
-            # No reply found on screen — scroll down for more
+            # No reply found — if page still has SVGs (ghost posts), we're done
+            if self._has_other_svgs():
+                console.print(f"[dim]  remaining items are not yours — stopping[/]")
+                break
             scroll_stalls += 1
             if scroll_stalls >= 20:
                 console.print(f"[dim]  no more replies found after {total_scrolls} scrolls[/]")

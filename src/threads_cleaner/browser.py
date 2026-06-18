@@ -329,6 +329,7 @@ class BrowserDeleter:
 
         deleted = 0
         scroll_stalls = 0
+        ghost_scrolls = 0
         total_scrolls = 0
 
         while True:
@@ -340,15 +341,21 @@ class BrowserDeleter:
             if dt:
                 deleted += 1
                 scroll_stalls = 0
+                ghost_scrolls = 0
                 console.print(f"[green]OK[/] deleted post {deleted}  ({dt})")
                 self._page.evaluate("window.scrollBy(0, 400)")
                 time.sleep(1)
                 continue
 
-            # No post found — if page still has SVGs (ghost posts) after scrolling, stop
-            if scroll_stalls >= 3 and self._has_other_svgs():
-                console.print(f"[dim]  remaining items are not yours — stopping[/]")
-                break
+            # No post found — check if SVGs exist (ghost posts) or page is empty
+            if self._has_other_svgs():
+                ghost_scrolls += 1
+                if ghost_scrolls >= 5:
+                    console.print(f"[dim]  no more posts found after {total_scrolls} scrolls[/]")
+                    break
+            else:
+                ghost_scrolls = 0
+
             scroll_stalls += 1
             if scroll_stalls >= 20:
                 console.print(f"[dim]  no more posts found after {total_scrolls} scrolls[/]")
@@ -387,6 +394,7 @@ class BrowserDeleter:
         # Replies are shown directly on this page with their own More button
         deleted = 0
         scroll_stalls = 0
+        ghost_scrolls = 0
         total_scrolls = 0
 
         while True:
@@ -398,6 +406,7 @@ class BrowserDeleter:
             if dt:
                 deleted += 1
                 scroll_stalls = 0
+                ghost_scrolls = 0
                 console.print(f"[green]OK[/] deleted reply {deleted}  ({dt})")
                 # Nudge the page down a little after each deletion so Threads'
                 # intersection observer loads more items
@@ -405,10 +414,15 @@ class BrowserDeleter:
                 time.sleep(1)
                 continue
 
-            # No reply found — if page still has SVGs (ghost posts), we're done
+            # No reply found — check if SVGs exist (ghost posts) or page is empty
             if self._has_other_svgs():
-                console.print(f"[dim]  remaining items are not yours — stopping[/]")
-                break
+                ghost_scrolls += 1
+                if ghost_scrolls >= 5:
+                    console.print(f"[dim]  no more replies found after {total_scrolls} scrolls[/]")
+                    break
+            else:
+                ghost_scrolls = 0
+
             scroll_stalls += 1
             if scroll_stalls >= 20:
                 console.print(f"[dim]  no more replies found after {total_scrolls} scrolls[/]")
